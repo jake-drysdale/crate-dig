@@ -27,25 +27,44 @@ def find_wav_files(root_dir):
                 wav_files.append(os.path.join(subdir, file))
     return wav_files
 
+# def build_embeddings_index(wav_files):
+#     """Build an index of embeddings for the given files."""
+#     f = 1024  # embedding size is 1024
+#     t = AnnoyIndex(f, 'angular')  # Using Annoy for nearest neighbor search
+#     embeddings_path_map = {}
+
+#     for i, file_path in enumerate(wav_files):
+#         embedding = extract_embedding(file_path)
+#         t.add_item(i, embedding)
+#         embeddings_path_map[i] = file_path
+
+#     t.build(10)  # 10 trees
+#     return t, embeddings_path_map
+
 def build_embeddings_index(wav_files):
-    """Build an index of embeddings for the given files."""
+    """Build an index of embeddings for the given files and return embeddings."""
     f = 1024  # embedding size is 1024
     t = AnnoyIndex(f, 'angular')  # Using Annoy for nearest neighbor search
     embeddings_path_map = {}
+    embeddings_list = []  # Store embeddings here
 
     for i, file_path in enumerate(wav_files):
         embedding = extract_embedding(file_path)
         t.add_item(i, embedding)
         embeddings_path_map[i] = file_path
+        embeddings_list.append(embedding)  # Add embedding to list
 
     t.build(10)  # 10 trees
-    return t, embeddings_path_map
+    return t, embeddings_path_map, embeddings_list  # Return embeddings_list
 
-def save_embeddings_index(embeddings_index, path_map, index_path, path_map_path):
-    """Save the embeddings index and path map to files."""
+
+
+def save_embeddings_index(embeddings_index, path_map, embeddings_list, index_path, path_map_path, embeddings_list_path):
+    """Save the embeddings index, path map, and embeddings list to files."""
     embeddings_index.save(index_path)
     with open(path_map_path, 'w') as f:
         json.dump(path_map, f)
+    np.save(embeddings_list_path, embeddings_list)  # Save embeddings list as .npy file
 
 def load_embeddings_index(index_path, path_map_path):
     """Load the embeddings index and path map from files."""
@@ -71,10 +90,11 @@ if __name__ == "__main__":
     # root_dir = '/Users/jake/Documents/code/trip/clap/sample_test_data/Zero-G Jungle Warfare Complete/Zero-G Jungle Warfare 1, 2 & 3/VOL 1/'
     os.makedirs(args.save_emap, exist_ok=False)
     wav_files = find_wav_files(args.audio_collection)
-    embeddings_index, path_map = build_embeddings_index(wav_files)
-    save_embeddings_index(embeddings_index, path_map,
+    embeddings_index, path_map, embeddings_list = build_embeddings_index(wav_files)
+    save_embeddings_index(embeddings_index, path_map, embeddings_list,
                           os.path.join(args.save_emap, 'embeddings.ann'),
-                          os.path.join(args.save_emap, 'path_map.json')
+                          os.path.join(args.save_emap, 'path_map.json'),
+                          os.path.join(args.save_emap, 'embeddings_list.npy')
                           )
 
 
