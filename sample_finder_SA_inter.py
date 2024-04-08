@@ -1,0 +1,487 @@
+import argparse
+import shutil
+import json
+from annoy import AnnoyIndex
+# from msclap import CLAP
+import os
+import torch
+from transformers import AutoTokenizer
+import sys
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import torchaudio
+import collections.abc
+import random
+import re
+import numpy as np
+import torchaudio.transforms as T
+import gc
+# import subprocess
+
+
+################# AUDIO COLLECTION ANALYSIS #################
+
+def find_wav_files(root_dir, file_types):
+    """Recursively find all audio files of specified types in the directory."""
+    audio_files = []
+    for subdir, dirs, files in os.walk(root_dir):
+        for file in files:
+            if any(file.lower().endswith(ext) for ext in file_types):
+                audio_files.append(os.path.join(subdir, file))
+    return audio_files
+
+def build_embeddings_index(wav_files, embeddings_list_path):
+    """Build an index of embeddings for the given files and return embeddings."""
+    f = 1024  # embedding size is 1024
+    t = AnnoyIndex(f, 'angular')  # Using Annoy for nearest neighbor search
+    shape = (len(wav_files), f)  
+    embeddings_path_map = {}
+    # embeddings_list = []  
+    embeddings_list = np.memmap(embeddings_list_path, dtype='float32', mode='w+', shape=shape)
+
+    for i, file_path in enumerate(wav_files):
+        embedding = extract_embedding(file_path, False)
+        embedding_np = embedding.detach().cpu().numpy()
+        t.add_item(i, embedding_np)
+        embeddings_path_map[i] = file_path
+        embeddings_list[i] = embedding_np
+        # embeddings_list.append(embedding)  # Add embedding to list
+        del embedding  # Explicitly delete if it's no longer needed
+        gc.collect()  # Force garbage collection
+
+    t.build(10)  # 10 trees
+    return t, embeddings_path_map  # Return embeddings_list
+
+def save_embeddings_index(embeddings_index, path_map, index_path, path_map_path):
+    """Save the embeddings index, path map, and embeddings list to files."""
+    embeddings_index.save(index_path)
+    with open(path_map_path, 'w') as f:
+        json.dump(path_map, f)
+    # np.save(embeddings_list_path, embeddings_list)  # Save embeddings list as .npy file
+
+# # def analyse_and_save(args):
+# def analyse_and_save(audio_collection_dir, save_emap_full_path):
+#     # os.makedirs(args.save_emap, exist_ok=False)
+#     wav_files = find_audio_files(audio_collection_dir)
+#     embeddings_index, path_map, embeddings_list = build_embeddings_index(wav_files)
+#     save_embeddings_index(embeddings_index, path_map, embeddings_list,
+#                             os.path.join(save_emap_full_path, 'embeddings.ann'),
+#                             os.path.join(save_emap_full_path, 'path_map.json'),
+#                             os.path.join(save_emap_full_path, 'embeddings_list.npy')
+#                             )
+
+
+
+################# AUDIO PROCESSING #################
+
+def read_audio(audio_path, sampling_rate, resample=True):
+    r"""Loads audio file or array and returns a torch tensor"""
+    # Load audio file
+    audio_time_series, sample_rate = torchaudio.load(audio_path)
+    
+    # Resample if necessary
+    if resample and sampling_rate != sample_rate:
+        resampler = T.Resample(sample_rate, sampling_rate)
+        audio_time_series = resampler(audio_time_series)
+    return audio_time_series, sampling_rate
+
+
+def load_audio_into_tensor(audio_path, audio_duration, sampling_rate, resample=False):
+    r"""Loads audio file and returns raw audio."""
+    # Read and resample audio
+    audio_time_series, sample_rate = read_audio(audio_path, sampling_rate, resample=resample)
+    audio_time_series = audio_time_series.reshape(-1)
+
+    # Extend or trim the audio_time_series to match the desired audio duration
+    if audio_duration * sample_rate >= audio_time_series.shape[0]:
+        repeat_factor = int(np.ceil((audio_duration * sample_rate) / audio_time_series.shape[0]))
+        audio_time_series = audio_time_series.repeat(repeat_factor)[:audio_duration * sample_rate]
+    else:
+        start_index = random.randrange(audio_time_series.shape[0] - audio_duration * sample_rate)
+        audio_time_series = audio_time_series[start_index:start_index + audio_duration * sample_rate]
+
+    return torch.FloatTensor(audio_time_series)
+
+
+def default_collate(batch):
+    r"""Puts each data field into a tensor with outer dimension batch size"""
+    elem = batch[0]
+    elem_type = type(elem)
+    np_str_obj_array_pattern = re.compile(r'[SaUO]')
+    if isinstance(elem, torch.Tensor):
+        out = None
+        if torch.utils.data.get_worker_info() is not None:
+            # If we're in a background process, concatenate directly into a
+            # shared memory tensor to avoid an extra copy
+            numel = sum(x.numel() for x in batch)
+            storage = elem.storage()._new_shared(numel)
+            out = elem.new(storage)
+        return torch.stack(batch, 0, out=out)
+    elif elem_type.__module__ == 'numpy' and elem_type.__name__ != 'str_' \
+            and elem_type.__name__ != 'string_':
+        if elem_type.__name__ == 'ndarray' or elem_type.__name__ == 'memmap':
+            # array of string classes and object
+            if np_str_obj_array_pattern.search(elem.dtype.str) is not None:
+                raise TypeError("batch must not contain strings or objects")
+            return default_collate([torch.as_tensor(b) for b in batch])
+        elif elem.shape == ():  # scalars
+            return torch.as_tensor(batch)
+    elif isinstance(elem, float):
+        return torch.tensor(batch, dtype=torch.float64)
+    elif isinstance(elem, int):
+        return torch.tensor(batch)
+    elif isinstance(elem, str):
+        return batch
+    elif isinstance(elem, collections.abc.Mapping):
+        return {key: default_collate([d[key] for d in batch]) for key in elem}
+    elif isinstance(elem, tuple) and hasattr(elem, '_fields'):  # namedtuple
+        return elem_type(*(default_collate(samples) for samples in zip(*batch)))
+    elif isinstance(elem, collections.abc.Sequence):
+        it = iter(batch)
+        elem_size = len(next(it))
+        if not all(len(elem) == elem_size for elem in it):
+            raise RuntimeError('each element in list of batch should be of equal size')
+        transposed = zip(*batch)
+        return [default_collate(samples) for samples in transposed]
+    raise TypeError("Unsupported batch data type")
+
+
+def preprocess_audio(audio_files, audio_duration=7, sampling_rate=44100, use_cuda=False, resample=True):
+    r"""Load list of audio files and return raw audio"""
+    audio_tensors = []
+    for audio_file in audio_files:
+        audio_tensor = load_audio_into_tensor(audio_file, audio_duration, sampling_rate, resample)
+        if use_cuda and torch.cuda.is_available():
+            audio_tensor = audio_tensor.reshape(1, -1).cuda()
+        else:
+            audio_tensor = audio_tensor.reshape(1, -1)
+        audio_tensors.append(audio_tensor)
+    preprocessed_audio = default_collate(audio_tensors)
+    preprocessed_audio = preprocessed_audio.reshape(
+                    preprocessed_audio.shape[0], preprocessed_audio.shape[2])
+    return preprocessed_audio
+
+
+################# TEXT PROCESSING #################
+
+def preprocess_text(text_queries, text_model='gpt2', text_len=77, use_cuda=False):
+    """
+    Tokenize a list of text queries using a specified model tokenizer.
+
+    Parameters:
+    - text_queries: A list of strings (text queries) to tokenize.
+    - text_model: The model ID for the tokenizer (default: 'gpt2').
+    - text_len: Maximum length of the tokenized output (default: 512).
+    - use_cuda: Whether to move tensors to CUDA if available (default: False).
+
+    Returns:
+    - A tensor containing the tokenized and collated text queries.
+    """
+    # tokenizer = AutoTokenizer.from_pretrained(text_model)
+    
+    # Set the padding token if not already defined
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    tokenized_texts = []
+    for ttext in text_queries:
+        ttext = ttext + ' ' if 'gpt' in text_model else ttext
+        
+        tok = tokenizer.encode_plus(
+            text=ttext,
+            add_special_tokens=True,
+            max_length=text_len,
+            padding='max_length',
+            return_tensors="pt",
+            truncation=True
+        )
+        
+        if use_cuda and torch.cuda.is_available():
+            tok = {k: v.cuda() for k, v in tok.items()}
+        tokenized_texts.append(tok)
+
+    input_ids = torch.stack([t["input_ids"].squeeze() for t in tokenized_texts])
+    attention_mask = torch.stack([t["attention_mask"].squeeze() for t in tokenized_texts])
+
+    return {"input_ids": input_ids, "attention_mask": attention_mask}
+
+
+################# EMBEDDING EXTRACTION AND LOADING #################
+
+def extract_embedding(audio_path, is_text):
+    if is_text:
+        # embedding = clap_model.get_text_embeddings([audio_path])
+        text_input = preprocess_text([audio_path])
+        embedding = text_encoder_model(text_input)
+    else:
+        audio_input = preprocess_audio([audio_path])
+        embedding = audio_encoder_model(audio_input)[0]
+    
+    return embedding[0]
+
+def load_embeddings_index(embedding_path_dir):
+    """Load the embeddings index and path map from files."""
+    index_path = os.path.join(embedding_path_dir, 'embeddings.ann')
+    path_map_path = os.path.join(embedding_path_dir, 'path_map.json')
+    t = AnnoyIndex(1024, 'angular')
+    t.load(index_path)
+    with open(path_map_path) as f:
+        path_map = json.load(f)
+    return t, path_map
+
+
+################# PROCESS INPUT #################
+
+def process_new_audio_sample(input_value, embeddings_index, path_map, n_samples, destination_folder, is_text):
+# def process_new_audio_sample(new_audio_path, embeddings_index, path_map, n_samples, destination_folder, text=False):
+    """Process a new audio sample: Extract embedding, find closest samples, copy to destination."""
+    new_embedding = extract_embedding(input_value, is_text)
+    nearest_ids = embeddings_index.get_nns_by_vector(new_embedding, n_samples)
+    for nearest_id in nearest_ids:
+        src_path = path_map[str(nearest_id)]
+        shutil.copy(src_path, destination_folder)
+        print(f"Copied {src_path} to {destination_folder}")
+
+
+################# LOADING MODELS AND CHECKPOINTS #################
+
+# Check if running as a PyInstaller bundle
+if getattr(sys, 'frozen', False):
+    application_path = sys._MEIPASS
+else:
+    application_path = '.'
+
+tokenizer_path = os.path.join(application_path, 'gpt2_tokenizer')
+tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+
+
+text_encoder_model = torch.jit.load(os.path.join(application_path,"traced_text_encoder_model.pt"))
+audio_encoder_model = torch.jit.load(os.path.join(application_path, "traced_audio_encoder_model.pt"))
+
+
+################# GUI  #################
+
+
+class CLIArgs:
+    def __init__(self, input_value, n_samples, destination_folder, embedding_map_dir, is_text=True):
+        self.input_value = input_value
+        self.n_samples = n_samples
+        self.destination_folder = destination_folder
+        self.embedding_map_dir = embedding_map_dir
+        self.is_text = is_text
+
+def run_sample_finder_cli(args):
+    embeddings_index, path_map = load_embeddings_index(args.embedding_map_dir)
+    process_new_audio_sample(args.input_value, embeddings_index, path_map, args.n_samples, args.destination_folder, args.is_text)
+
+def run_sample_finder_gui():
+    def browse_folder(entry):
+        folder_selected = filedialog.askdirectory()
+        entry.delete(0, tk.END)
+        entry.insert(0, folder_selected)
+
+    def browse_file(entry):
+        file_selected = filedialog.askopenfilename(filetypes=[("Audio Files", "*.mp3 *.wav *.flac")])
+        entry.delete(0, tk.END)
+        entry.insert(0, file_selected)
+
+    def validate_and_run():
+        try:
+            input_type = input_type_var.get()
+            input_value = text_prompt_entry.get() if input_type == 'Text' else audio_file_entry.get()
+            n_samples = int(n_samples_entry.get())
+            destination_folder = destination_folder_entry.get()
+            embedding_map_dir = embedding_map_dir_entry.get()
+
+            args = CLIArgs(input_value, n_samples, destination_folder, embedding_map_dir, is_text=(input_type == 'Text'))
+            run_sample_finder_cli(args)
+
+            messagebox.showinfo("Success", "Operation Completed Successfully")
+        except ValueError:
+            messagebox.showerror("Error", "Number of samples must be an integer.")
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {e}")
+
+    def analyze_audio_collection():
+        audio_collection_dir = audio_collection_entry.get()
+        file_type = file_type_var.get()
+        emap_name = emap_name_entry.get()
+        save_emap_location = save_emap_location_entry.get()
+
+        if not audio_collection_dir or not emap_name or not save_emap_location:
+            messagebox.showwarning("Warning", "Please fill in all required fields.")
+            return
+
+        save_emap_full_path = os.path.join(save_emap_location, emap_name)
+        os.makedirs(save_emap_full_path, exist_ok=True)
+        
+        try:
+            wav_files = find_wav_files(audio_collection_dir, file_type)
+            embeddings_index, path_map = build_embeddings_index(wav_files, os.path.join(save_emap_full_path, 'embeddings_list.npy'))
+            save_embeddings_index(embeddings_index, path_map,
+                                  os.path.join(save_emap_full_path, 'embeddings.ann'),
+                                  os.path.join(save_emap_full_path, 'path_map.json'),
+                                  )
+            messagebox.showinfo("Success", f"Analysis completed. Embeddings saved to {save_emap_full_path}.")
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {e}")
+
+    root = tk.Tk()
+    root.title("Sample Finder")
+
+    tk.Label(root, text="Audio Collection Folder:").pack()
+    audio_collection_entry = tk.Entry(root)
+    audio_collection_entry.pack()
+    tk.Button(root, text="Browse...", command=lambda: browse_folder(audio_collection_entry)).pack()
+
+    tk.Label(root, text="File Type:").pack()
+    file_type_var = tk.StringVar(value='.wav')  # Default file type
+    file_type_entry = tk.Entry(root, textvariable=file_type_var)
+    file_type_entry.pack()
+
+    tk.Label(root, text="Embedding Map Name:").pack()
+    emap_name_entry = tk.Entry(root)
+    emap_name_entry.pack()
+
+    tk.Label(root, text="Save Embedding Map Location:").pack()
+    save_emap_location_entry = tk.Entry(root)
+    save_emap_location_entry.pack()
+    tk.Button(root, text="Browse...", command=lambda: browse_folder(save_emap_location_entry)).pack()
+
+    tk.Button(root, text="Analyze and Save Collection", command=analyze_audio_collection).pack()
+
+
+    input_type_var = tk.StringVar(value='Text')
+    tk.Radiobutton(root, text="Text", variable=input_type_var, value='Text', command=lambda: toggle_input_type()).pack()
+    tk.Radiobutton(root, text="Audio", variable=input_type_var, value='Audio', command=lambda: toggle_input_type()).pack()
+
+    text_prompt_label = tk.Label(root, text="Text Prompt:")
+    audio_file_label = tk.Label(root, text="Audio File:")
+    text_prompt_entry = tk.Entry(root)
+    audio_file_entry = tk.Entry(root)
+    browse_button = tk.Button(root, text="Browse...", command=lambda: browse_file(audio_file_entry))
+
+    def toggle_input_type():
+        if input_type_var.get() == 'Text':
+            audio_file_entry.pack_forget()
+            audio_file_label.pack_forget()
+            browse_button.pack_forget()
+            text_prompt_label.pack()
+            text_prompt_entry.pack()
+        else:  # 'Audio'
+            text_prompt_entry.pack_forget()
+            text_prompt_label.pack_forget()
+            audio_file_label.pack()
+            audio_file_entry.pack()
+            browse_button.pack()
+
+    # Initial toggle to configure initial view
+    toggle_input_type()
+
+    tk.Label(root, text="Number of Samples:").pack()
+    n_samples_entry = tk.Entry(root)
+    n_samples_entry.pack()
+
+    tk.Label(root, text="Destination Folder:").pack()
+    destination_folder_entry = tk.Entry(root)
+    destination_folder_entry.pack()
+    tk.Button(root, text="Browse...", command=lambda: browse_folder(destination_folder_entry)).pack()
+
+    tk.Label(root, text="Embeddings Folder:").pack()
+    embedding_map_dir_entry = tk.Entry(root)
+    embedding_map_dir_entry.pack()
+    tk.Button(root, text="Browse...", command=lambda: browse_folder(embedding_map_dir_entry)).pack()
+
+    run_button = tk.Button(root, text="Run Sample Finder", command=validate_and_run)
+    run_button.pack()
+
+    root.mainloop()
+
+if __name__ == "__main__":
+    application_path = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+    if len(sys.argv) > 1:
+        parser = argparse.ArgumentParser(description="Find and copy closest audio samples.")
+        parser.add_argument("--input_value", required=True, help="Text prompt or path to the audio file for searching")
+        parser.add_argument("--n_samples", type=int, required=True, help="Number of closest samples to find and copy")
+        parser.add_argument("--destination_folder", default=os.path.join(application_path, "found_samples"), help="Folder to copy closest samples to")
+        parser.add_argument("--embedding_map_dir", default=os.path.join(application_path, "embeddings"), help="Path to the folder with embeddings index and path map files")
+        parser.add_argument("--is_text", action='store_true', help="Process as text instead of audio")
+
+        args = parser.parse_args()
+        run_sample_finder_cli(args)
+    else:
+        run_sample_finder_gui()
+
+
+
+
+
+
+
+# def run_sample_finder_gui():
+#     def browse_folder(entry):
+#         folder_selected = filedialog.askdirectory()
+#         entry.delete(0, tk.END)
+#         entry.insert(0, folder_selected)
+
+#     def browse_file(entry):
+#         file_selected = filedialog.askopenfilename(filetypes=[("Audio Files", "*.mp3 *.wav *.flac")])
+#         entry.delete(0, tk.END)
+#         entry.insert(0, file_selected)
+
+#     def validate_and_run():
+#         try:
+#             text_prompt = text_prompt_entry.get()
+#             n_samples = int(n_samples_entry.get())
+#             destination_folder = destination_folder_entry.get()
+#             embedding_map_dir = embedding_map_dir_entry.get()
+
+#             args = CLIArgs(text_prompt, n_samples, destination_folder, embedding_map_dir, text=True)
+#             run_sample_finder_cli(args)
+            
+#             messagebox.showinfo("Success", "Operation Completed Successfully")
+#         except ValueError:
+#             messagebox.showerror("Error", "Number of samples must be an integer.")
+#         except Exception as e:
+#             messagebox.showerror("Error", f"An error occurred: {e}")
+
+#     root = tk.Tk()
+#     root.title("Sample Finder")
+
+#     tk.Label(root, text="Text Prompt:").pack()
+#     text_prompt_entry = tk.Entry(root)
+#     text_prompt_entry.pack()
+
+#     tk.Label(root, text="Number of Samples:").pack()
+#     n_samples_entry = tk.Entry(root)
+#     n_samples_entry.pack()
+
+#     tk.Label(root, text="Destination Folder:").pack()
+#     destination_folder_entry = tk.Entry(root)
+#     destination_folder_entry.pack()
+#     tk.Button(root, text="Browse...", command=lambda: browse_folder(destination_folder_entry)).pack()
+
+#     tk.Label(root, text="Embeddings Folder:").pack()
+#     embedding_map_dir_entry = tk.Entry(root)
+#     embedding_map_dir_entry.pack()
+#     tk.Button(root, text="Browse...", command=lambda: browse_folder(embedding_map_dir_entry)).pack()
+
+#     run_button = tk.Button(root, text="Run Sample Finder", command=validate_and_run)
+#     run_button.pack()
+
+#     root.mainloop()
+
+# if __name__ == "__main__":
+#     application_path = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+#     if len(sys.argv) > 1:
+#         parser = argparse.ArgumentParser(description="Find and copy closest audio samples.")
+#         parser.add_argument("--text_prompt", required=True, help="Text prompt for searching")
+#         parser.add_argument("--n_samples", type=int, required=True, help="Number of closest samples to find and copy")
+#         parser.add_argument("--destination_folder", default=os.path.join(application_path, "found_samples"), help="Folder to copy closest samples to")
+#         parser.add_argument("--embedding_map_dir", default=os.path.join(application_path, "embeddings"), help="Path to the folder with embeddings index and path map files")
+#         parser.add_argument("--text", action='store_true', help="Process as text instead of audio")
+
+#         args = parser.parse_args()
+#         run_sample_finder_cli(args)
+#     else:
+#         run_sample_finder_gui()
