@@ -4,3 +4,4 @@ local
 .DS_Store
 traced_audio_encoder_model.pt
 traced_text_encoder_model.pt
+embeddings/
