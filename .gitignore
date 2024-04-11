@@ -5,3 +5,4 @@ local
 traced_audio_encoder_model.pt
 traced_text_encoder_model.pt
 embeddings/
+__pycache__/
