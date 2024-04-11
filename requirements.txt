@@ -1,3 +1,4 @@
 annoy==1.0.3
 torch==2.2.2
 msclap
+customtkinter

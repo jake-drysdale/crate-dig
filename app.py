@@ -10,6 +10,7 @@ from sample_finder_SA_inter import (
 )
 import os
 import argparse
+import customtkinter as ctk
 
 
 class CLIArgs:
@@ -116,121 +117,136 @@ def run_sample_finder_gui():
             audio_file_entry.pack_forget()
             audio_file_label.pack_forget()
             browse_button.pack_forget()
-            text_prompt_label.pack()
-            text_prompt_entry.pack()
+            text_prompt_label.pack(**p)
+            text_prompt_entry.pack(**p)
         else:  # 'Audio'
             text_prompt_entry.pack_forget()
             text_prompt_label.pack_forget()
-            audio_file_label.pack()
-            audio_file_entry.pack()
-            browse_button.pack()
+            audio_file_label.pack(**p)
+            audio_file_entry.pack(**p)
+            browse_button.pack(**p)
 
-    root = tk.Tk()
+    root = ctk.CTk()
+    ctk.set_appearance_mode("dark")
+    ctk.set_default_color_theme("blue")
+
     root.title("Sample Finder")
     root.geometry("1000x800")  # Making the GUI wider
     theme = {
         "light": {"bg": "light grey", "fg": "black"},
         "dark": {
-            "bg": "#333333",
+            "bg_color": "#333333",
         },
     }
     m = theme["dark"]
-    root.configure(bg="#1f1f1f")
-    mb = {"bg": m["bg"]}
+    p = {
+        "padx": 10,
+        "pady": 5,
+    }
+    # root.configure(bg="#1f1f1f")
+    # mb = {"bg": m["bg"]}
     # mf = {"fg": m["fg"]}
-    # Section 1: Initial analysis
-    initial_analysis_frame = tk.Frame(root, **m, bd=2, relief=tk.GROOVE)
+
+    initial_analysis_frame = ctk.CTkFrame(root, **m)
     initial_analysis_frame.place(relx=0.02, rely=0.02, relwidth=0.45, relheight=0.96)
-    inference_frame = tk.Frame(root, **m, bd=2, relief=tk.GROOVE)
+
+    inference_frame = ctk.CTkFrame(root, **m)
     inference_frame.place(relx=0.52, rely=0.02, relwidth=0.45, relheight=0.96)
 
-    tk.Label(initial_analysis_frame, text="Audio Collection Folder:", **mb).pack()
-    audio_collection_entry = tk.Entry(initial_analysis_frame)
-    audio_collection_entry.pack()
-    tk.Button(
+    # Section 1: Initial analysis
+    ctk.CTkLabel(initial_analysis_frame, text="Build Database").pack(**p)
+
+    ctk.CTkLabel(initial_analysis_frame, text="Audio Collection Folder:", **p).pack(**p)
+    audio_collection_entry = ctk.CTkEntry(initial_analysis_frame)
+    audio_collection_entry.pack(**p)
+    ctk.CTkButton(
         initial_analysis_frame,
         text="Browse...",
         command=lambda: browse_folder(audio_collection_entry),
-    ).pack()
+    ).pack(**p)
 
-    tk.Label(initial_analysis_frame, text="File Type:").pack()
+    ctk.CTkLabel(initial_analysis_frame, text="File Type:").pack(**p)
     file_type_var = tk.StringVar(value=".wav")  # Default file type
-    file_type_entry = tk.Entry(initial_analysis_frame, textvariable=file_type_var)
-    file_type_entry.pack()
+    file_type_entry = ctk.CTkEntry(initial_analysis_frame, textvariable=file_type_var)
+    file_type_entry.pack(**p)
 
-    tk.Label(initial_analysis_frame, text="Embedding Map Name:").pack()
-    emap_name_entry = tk.Entry(initial_analysis_frame)
-    emap_name_entry.pack()
+    ctk.CTkLabel(initial_analysis_frame, text="Embedding Map Name:").pack(**p)
+    emap_name_entry = ctk.CTkEntry(initial_analysis_frame)
+    emap_name_entry.pack(**p)
 
-    tk.Label(initial_analysis_frame, text="Save Embedding Map Location:").pack()
-    save_emap_location_entry = tk.Entry(initial_analysis_frame)
-    save_emap_location_entry.pack()
-    tk.Button(
+    ctk.CTkLabel(initial_analysis_frame, text="Save Embedding Map Location:").pack(**p)
+    save_emap_location_entry = ctk.CTkEntry(initial_analysis_frame)
+    save_emap_location_entry.pack(**p)
+    ctk.CTkButton(
         initial_analysis_frame,
         text="Browse...",
         command=lambda: browse_folder(save_emap_location_entry),
-    ).pack()
+    ).pack(**p)
 
-    tk.Button(
+    ctk.CTkButton(
         initial_analysis_frame,
         text="Analyze and Save Collection",
         command=analyze_audio_collection,
-    ).pack()
+    ).pack(**p)
+
+
 
     # Section 2: Running inference with SampleFinder
+
+    ctk.CTkLabel(inference_frame, text="Search for Samples").pack(**p)
     input_type_var = tk.StringVar(value="Text")
-    tk.Radiobutton(
+    ctk.CTkRadioButton(
         inference_frame,
         text="Text",
         variable=input_type_var,
         value="Text",
         command=toggle_input_type,
-    ).pack()
-    tk.Radiobutton(
+    ).pack(**p)
+    ctk.CTkRadioButton(
         inference_frame,
         text="Audio",
         variable=input_type_var,
         value="Audio",
         command=toggle_input_type,
-    ).pack()
+    ).pack(**p)
 
-    text_prompt_label = tk.Label(inference_frame, text="Text Prompt:")
-    audio_file_label = tk.Label(inference_frame, text="Audio File:")
-    text_prompt_entry = tk.Entry(inference_frame)
-    audio_file_entry = tk.Entry(inference_frame)
-    browse_button = tk.Button(
+    text_prompt_label = ctk.CTkLabel(inference_frame, text="Text Prompt:")
+    audio_file_label = ctk.CTkLabel(inference_frame, text="Audio File:")
+    text_prompt_entry = ctk.CTkEntry(inference_frame)
+    audio_file_entry = ctk.CTkEntry(inference_frame)
+    browse_button = ctk.CTkButton(
         inference_frame, text="Browse...", command=lambda: browse_file(audio_file_entry)
     )
 
     # Initial toggle to configure initial view
     toggle_input_type()
 
-    tk.Label(inference_frame, text="Number of Samples:").pack()
-    n_samples_entry = tk.Entry(inference_frame)
-    n_samples_entry.pack()
+    ctk.CTkLabel(inference_frame, text="Number of Samples:").pack(**p)
+    n_samples_entry = ctk.CTkEntry(inference_frame)
+    n_samples_entry.pack(**p)
 
-    tk.Label(inference_frame, text="Destination Folder:").pack()
-    destination_folder_entry = tk.Entry(inference_frame)
-    destination_folder_entry.pack()
-    tk.Button(
+    ctk.CTkLabel(inference_frame, text="Destination Folder:").pack(**p)
+    destination_folder_entry = ctk.CTkEntry(inference_frame)
+    destination_folder_entry.pack(**p)
+    ctk.CTkButton(
         inference_frame,
         text="Browse...",
         command=lambda: browse_folder(destination_folder_entry),
-    ).pack()
+    ).pack(**p)
 
-    tk.Label(inference_frame, text="Embeddings Folder:").pack()
-    embedding_map_dir_entry = tk.Entry(inference_frame)
-    embedding_map_dir_entry.pack()
-    tk.Button(
+    ctk.CTkLabel(inference_frame, text="Embeddings Folder:").pack(**p)
+    embedding_map_dir_entry = ctk.CTkEntry(inference_frame)
+    embedding_map_dir_entry.pack(**p)
+    ctk.CTkButton(
         inference_frame,
         text="Browse...",
         command=lambda: browse_folder(embedding_map_dir_entry),
-    ).pack()
+    ).pack(**p)
 
-    run_button = tk.Button(
+    run_button = ctk.CTkButton(
         inference_frame, text="Run Sample Finder", command=validate_and_run
     )
-    run_button.pack()
+    run_button.pack(**p)
 
     root.mainloop()
 
