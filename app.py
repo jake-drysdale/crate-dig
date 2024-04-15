@@ -162,7 +162,7 @@ class App:
                 )
 
         self.input_type_var = StringVar()
-        self.n_samples_var = IntVar(value=1)
+        self.n_samples_var = StringVar(value="1")
 
         self.destination_folder_var = StringVar(
             value=last_state_sf.get("destination_folder", "")
@@ -205,8 +205,14 @@ class App:
                     input_value = self.text_prompt_entry.get()
                 else:
                     input_value = self.audio_file_entry.get()
-
-                n_samples = int(self.n_samples_var.get())
+                try:
+                    n_samples = int(self.n_samples_var.get())
+                except ValueError:
+                    messagebox.showerror(
+                        "Error", "Number of samples must be an integer."
+                    )
+                    self.n_samples_var.set("1")
+                    return
                 destination_folder = self.destination_folder_var.get()
                 embedding_map_dir = self.embedding_map_dir_var.get()
                 with open(LAST_STATE_FILE_SF, "w") as f:
@@ -279,6 +285,10 @@ class App:
                 )
             except Exception as e:
                 messagebox.showerror("Error", f"An error occurred: {e}")
+
+        def update_entries_number(entries, new_value):
+            for entry in entries:
+                entry.set(new_value)
 
         self.app_notebook = Notebook(self.widget)
         self.app_notebook.place(x=0, y=0, width=dw, height=dh)
@@ -353,7 +363,7 @@ class App:
             textvariable=self.n_samples_var,
         )
         self.n_samples_text_textbox.place(x=xgap, y=120 + offset)
-
+        self.nsamplestext_var = IntVar(value=1)
         self.n_samples_text_slider = customtkinter.CTkSlider(
             self.search_by_text_tab,
             from_=0,
@@ -364,7 +374,10 @@ class App:
             state="normal",
             width=ew,
             height=22,
-            variable=self.n_samples_var,
+            command=lambda x: update_entries_number(
+                [self.n_samples_var, self.nsamplesaudio_var], int(float(x))
+            ),
+            variable=self.nsamplestext_var,
         )
         self.n_samples_text_slider.place(x=(2 * xgap + bw), y=120 + offset)
 
@@ -476,9 +489,10 @@ class App:
             textvariable=self.n_samples_var,
         )
         self.n_samples_audio_textbox.place(x=xgap, y=120 + offset)
+        self.nsamplesaudio_var = IntVar(value=1)
         self.n_samples_audio_slider = customtkinter.CTkSlider(
             self.search_by_audio_tab,
-            from_=0,
+            from_=1,
             to=100,
             orientation=HORIZONTAL,
             fg_color=self.default_theme["bg_dark"],
@@ -486,7 +500,10 @@ class App:
             state="normal",
             width=ew,
             height=22,
-            variable=self.n_samples_var,
+            command=lambda x: update_entries_number(
+                [self.n_samples_var, self.nsamplestext_var], int(float(x))
+            ),
+            variable=self.nsamplesaudio_var,
         )
         self.n_samples_audio_slider.place(x=(2 * xgap + bw), y=120 + offset)
 
@@ -561,7 +578,10 @@ class App:
 
         self.embedding_extraction_tab = Frame(self.extraction_notebook)
         self.embedding_extraction_tab.configure(bg=self.default_theme["bg_accent"])
-        self.embedding_extraction_tab.place(x=0, y=0, )
+        self.embedding_extraction_tab.place(
+            x=0,
+            y=0,
+        )
 
         self.analyse_new_library_label = customtkinter.CTkLabel(
             self.analyse_new_library_tab,
