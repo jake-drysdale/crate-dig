@@ -1,9 +1,9 @@
 import sys
+import json
 import tkinter as tk
 from tkinter import StringVar, IntVar, HORIZONTAL, END, Tk, Frame
 from tkinter import filedialog, messagebox
 from tkinter.ttk import Notebook
-
 from sample_finder_SA_inter import (
     load_embeddings_index,
     process_new_audio_sample,
@@ -18,6 +18,9 @@ import customtkinter
 
 customtkinter.set_appearance_mode("Dark")
 customtkinter.set_default_color_theme("dark-blue")
+
+LAST_STATE_FILE_SF = "state/last_state_samplefinder.json"
+LAST_STATE_FILE_ANL = "state/last_state_analyse_new_library.json"
 
 
 class CLIArgs:
@@ -51,6 +54,7 @@ def run_sample_finder_cli(args):
         args.is_text,
     )
 
+
 class App:
     def __init__(self, parent):
         self.default_theme = {
@@ -76,7 +80,11 @@ class App:
                 "anchor": "w",
                 "text_color": self.default_theme["text"],
                 "bg_color": self.default_theme["bg_light"],
-                "font": (self.default_theme["font"], self.default_theme["font_size"], "bold"),
+                "font": (
+                    self.default_theme["font"],
+                    self.default_theme["font_size"],
+                    "bold",
+                ),
                 "state": "normal",
             },
             "labelLarge": {
@@ -126,24 +134,49 @@ class App:
         """
         Create the GUI for the application.
         """
-        
+        dw = 800
+        dh = 560
+
         if parent == 0:
-            self.widget = Tk()
+            self.widget = customtkinter.CTk()
             self.widget.title("Sample Finder")
-            self.widget.geometry("500x560")
+            self.widget.geometry(f"{dw}x{dh}")
+            self.widget.resizable(True, True)
         else:
             self.widget = Frame(parent)
             self.widget.place(x=0, y=0, width=500, height=560)
 
         offset = 10
 
-        self.input_type_var = StringVar()
-        self.n_samples_var = IntVar()
-        self.destination_folder_var = StringVar()
-        self.embedding_map_dir_var = StringVar()
+        with open(LAST_STATE_FILE_SF, "r") as f:
+            last_state_sf = json.load(f)
+        with open(LAST_STATE_FILE_ANL, "r") as f:
+            last_state_anl = json.load(f)
 
-        self.audio_collection_var = StringVar()
-        self.emap_name_entry = StringVar(value="embeddings")
+        if last_state_sf.get("embedding_map_dir", "") == "":
+            audio_collection_dir = last_state_anl.get("audio_collection_dir", "")
+            library_name = last_state_anl.get("emap_name", "")
+            if audio_collection_dir != "" and library_name != "":
+                last_state_sf["embedding_map_dir"] = os.path.join(
+                    last_state_anl["save_emap_location"], library_name
+                )
+
+        self.input_type_var = StringVar()
+        self.n_samples_var = IntVar(value=1)
+
+        self.destination_folder_var = StringVar(
+            value=last_state_sf.get("destination_folder", "")
+        )
+        self.embedding_map_dir_var = StringVar(
+            value=last_state_sf.get("embedding_map_dir", "")
+        )
+        self.audio_collection_var = StringVar(
+            value=last_state_anl.get("audio_collection_dir", "")
+        )
+        self.save_emap_location_var = StringVar(
+            value=last_state_anl.get("save_emap_location", "")
+        )
+        self.library_name_var = StringVar(value=last_state_anl.get("emap_name", ""))
 
         def browse_folder(entry):
             """
@@ -176,7 +209,15 @@ class App:
                 n_samples = int(self.n_samples_var.get())
                 destination_folder = self.destination_folder_var.get()
                 embedding_map_dir = self.embedding_map_dir_var.get()
-
+                with open(LAST_STATE_FILE_SF, "w") as f:
+                    json.dump(
+                        {
+                            "destination_folder": destination_folder,
+                            "embedding_map_dir": embedding_map_dir,
+                        },
+                        f,
+                        indent=4,
+                    )
                 args = CLIArgs(
                     input_value,
                     n_samples,
@@ -198,8 +239,20 @@ class App:
             """
             audio_collection_dir = self.audio_collection_entry.get()
             file_type = self.file_type_entry.get()
-            emap_name = self.library_name.get()
-            save_emap_location = self.save_emap_location_entry.get()
+            if file_type == "any":
+                file_type = (".wav", ".flac", ".mp3")
+            emap_name = self.library_name_var.get()
+            save_emap_location = self.save_emap_location_var.get()
+            with open(LAST_STATE_FILE_ANL, "w") as f:
+                json.dump(
+                    {
+                        "audio_collection_dir": audio_collection_dir,
+                        "emap_name": emap_name,
+                        "save_emap_location": save_emap_location,
+                    },
+                    f,
+                    indent=4,
+                )
 
             if not audio_collection_dir or not emap_name or not save_emap_location:
                 messagebox.showwarning("Warning", "Please fill in all required fields.")
@@ -207,6 +260,7 @@ class App:
 
             save_emap_full_path = os.path.join(save_emap_location, emap_name)
             os.makedirs(save_emap_full_path, exist_ok=True)
+            self.embedding_map_dir_var.set(save_emap_full_path)
 
             try:
                 wav_files = find_wav_files(audio_collection_dir, file_type)
@@ -227,30 +281,44 @@ class App:
                 messagebox.showerror("Error", f"An error occurred: {e}")
 
         self.app_notebook = Notebook(self.widget)
-        self.app_notebook.place(x=0, y=0, width=500, height=560)
+        self.app_notebook.place(x=0, y=0, width=dw, height=dh)
 
         self.sample_finder_tab = Frame(self.app_notebook)
         self.sample_finder_tab.configure(bg=self.default_theme["bg_accent"])
-        self.sample_finder_tab.place(x=0, y=0, width=500, height=560)
+        self.sample_finder_tab.place(
+            x=0,
+            y=0,
+        )
 
         self.analyse_new_library_tab = Frame(self.app_notebook)
         self.analyse_new_library_tab.configure(bg=self.default_theme["bg_accent"])
-        self.analyse_new_library_tab.place(x=0, y=0, width=500, height=560)
+        self.analyse_new_library_tab.place(
+            x=0,
+            y=0,
+        )
 
         # --------------------- Sample Finder ---------------------
+        iw = dw - 20
+        ih = dh - 100
+        xgap = 20
+        bw = 110
+        rbx = iw - (xgap + bw)
+        ew = iw - (3 * xgap + bw)
+
         self.input_mode_notebook = Notebook(self.sample_finder_tab)
-        self.input_mode_notebook.place(x=8, y=66, width=480, height=460)
+
+        self.input_mode_notebook.place(x=8, y=66, width=iw, height=ih)
 
         self.search_by_text_tab = Frame(self.input_mode_notebook)
         self.search_by_text_tab.configure(bg=self.default_theme["bg_accent"])
-        self.search_by_text_tab.place(x=0, y=0, width=476, height=372)
+        self.search_by_text_tab.place(x=0, y=0)
 
         self.search_for_samples_label = customtkinter.CTkLabel(
             self.sample_finder_tab,
             text="Search for Samples",
             **self.common_configs["labelLarge"],
         )
-        self.search_for_samples_label.place(x=18, y=6)
+        self.search_for_samples_label.place(x=xgap, y=6)
 
         self.text_prompt_label = customtkinter.CTkLabel(
             self.search_by_text_tab,
@@ -259,14 +327,14 @@ class App:
             width=210,
             height=22,
         )
-        self.text_prompt_label.place(x=20, y=10 + offset)
+        self.text_prompt_label.place(x=xgap, y=10 + offset)
         self.text_prompt_entry = customtkinter.CTkEntry(
             self.search_by_text_tab,
             **self.common_configs["entry"],
-            width=440,
+            width=iw - (2 * xgap),
             height=22,
         )
-        self.text_prompt_entry.place(x=18, y=44 + offset)
+        self.text_prompt_entry.place(x=xgap, y=44 + offset)
 
         self.n_samples_label = customtkinter.CTkLabel(
             self.search_by_text_tab,
@@ -275,7 +343,16 @@ class App:
             width=300,
             height=22,
         )
-        self.n_samples_label.place(x=20, y=86 + offset)
+        self.n_samples_label.place(x=xgap, y=86 + offset)
+
+        self.n_samples_text_textbox = customtkinter.CTkEntry(
+            self.search_by_text_tab,
+            **self.common_configs["entry"],
+            width=bw,
+            height=22,
+            textvariable=self.n_samples_var,
+        )
+        self.n_samples_text_textbox.place(x=xgap, y=120 + offset)
 
         self.n_samples_text_slider = customtkinter.CTkSlider(
             self.search_by_text_tab,
@@ -285,19 +362,11 @@ class App:
             fg_color=self.default_theme["bg_dark"],
             cursor="arrow",
             state="normal",
-            width=320,
+            width=ew,
             height=22,
             variable=self.n_samples_var,
         )
-        self.n_samples_text_slider.place(x=138, y=120 + offset)
-        self.n_samples_text_textbox = customtkinter.CTkEntry(
-            self.search_by_text_tab,
-            **self.common_configs["entry"],
-            width=110,
-            height=22,
-            textvariable=self.n_samples_var,
-        )
-        self.n_samples_text_textbox.place(x=20, y=120 + offset)
+        self.n_samples_text_slider.place(x=(2 * xgap + bw), y=120 + offset)
 
         self.export_dir_label = customtkinter.CTkLabel(
             self.search_by_text_tab,
@@ -310,19 +379,19 @@ class App:
         self.destination_folder_text_entry = customtkinter.CTkEntry(
             self.search_by_text_tab,
             **self.common_configs["entry"],
-            width=320,
+            width=ew,
             height=22,
             textvariable=self.destination_folder_var,
         )
-        self.destination_folder_text_entry.place(x=20, y=188 + offset * 2)
+        self.destination_folder_text_entry.place(x=xgap, y=188 + offset * 2)
         self.exportdirbutton = customtkinter.CTkButton(
             self.search_by_text_tab,
             **self.common_configs["buttonBrowse"],
-            width=110,
+            width=bw,
             height=22,
             command=lambda: browse_folder(self.destination_folder_text_entry),
         )
-        self.exportdirbutton.place(x=350, y=188 + offset * 2)
+        self.exportdirbutton.place(x=rbx, y=188 + offset * 2)
 
         self.librarylocationlabel = customtkinter.CTkLabel(
             self.search_by_text_tab,
@@ -335,19 +404,19 @@ class App:
         self.liblocentry = customtkinter.CTkEntry(
             self.search_by_text_tab,
             **self.common_configs["entry"],
-            width=320,
+            width=ew,
             height=22,
             textvariable=self.embedding_map_dir_var,
         )
-        self.liblocentry.place(x=20, y=250 + offset * 3)
+        self.liblocentry.place(x=xgap, y=250 + offset * 3)
         self.liblocbrowse = customtkinter.CTkButton(
             self.search_by_text_tab,
             **self.common_configs["buttonBrowse"],
-            width=110,
+            width=bw,
             height=22,
             command=lambda: browse_folder(self.liblocentry),
         )
-        self.liblocbrowse.place(x=350, y=250 + offset * 3)
+        self.liblocbrowse.place(x=rbx, y=250 + offset * 3)
 
         self.searchbytextbutton = customtkinter.CTkButton(
             self.search_by_text_tab,
@@ -357,7 +426,7 @@ class App:
             height=44,
             command=lambda: validate_and_run("text"),
         )
-        self.searchbytextbutton.place(x=90, y=300 + offset * 5)
+        self.searchbytextbutton.place(x=round(iw / 2) - 150, y=300 + offset * 5)
         self.onHover(self.searchbytextbutton)
 
         self.input_mode_notebook.add(self.search_by_text_tab, text="Search By Text")
@@ -377,18 +446,18 @@ class App:
         self.audio_file_entry = customtkinter.CTkEntry(
             self.search_by_audio_tab,
             **self.common_configs["entry"],
-            width=320,
+            width=ew,
             height=22,
         )
-        self.audio_file_entry.place(x=20, y=44 + offset)
+        self.audio_file_entry.place(x=xgap, y=44 + offset)
         self.base_audio_browse = customtkinter.CTkButton(
             self.search_by_audio_tab,
             **self.common_configs["buttonBrowse"],
-            width=110,
+            width=bw,
             height=22,
             command=lambda: browse_file(self.audio_file_entry),
         )
-        self.base_audio_browse.place(x=350, y=44 + offset)
+        self.base_audio_browse.place(x=rbx, y=44 + offset)
 
         self.n_samples_audio_label = customtkinter.CTkLabel(
             self.search_by_audio_tab,
@@ -398,6 +467,15 @@ class App:
             height=22,
         )
         self.n_samples_audio_label.place(x=20, y=86 + offset)
+
+        self.n_samples_audio_textbox = customtkinter.CTkEntry(
+            self.search_by_audio_tab,
+            **self.common_configs["entry"],
+            width=bw,
+            height=22,
+            textvariable=self.n_samples_var,
+        )
+        self.n_samples_audio_textbox.place(x=xgap, y=120 + offset)
         self.n_samples_audio_slider = customtkinter.CTkSlider(
             self.search_by_audio_tab,
             from_=0,
@@ -406,19 +484,11 @@ class App:
             fg_color=self.default_theme["bg_dark"],
             cursor="arrow",
             state="normal",
-            width=320,
+            width=ew,
             height=22,
             variable=self.n_samples_var,
         )
-        self.n_samples_audio_slider.place(x=138, y=120 + offset)
-        self.n_samples_audio_textbox = customtkinter.CTkEntry(
-            self.search_by_audio_tab,
-            **self.common_configs["entry"],
-            width=110,
-            height=22,
-            textvariable=self.n_samples_var,
-        )
-        self.n_samples_audio_textbox.place(x=20, y=120 + offset)
+        self.n_samples_audio_slider.place(x=(2 * xgap + bw), y=120 + offset)
 
         self.export_dir_audio_label = customtkinter.CTkLabel(
             self.search_by_audio_tab,
@@ -431,19 +501,19 @@ class App:
         self.destination_folder_audio_entry = customtkinter.CTkEntry(
             self.search_by_audio_tab,
             **self.common_configs["entry"],
-            width=320,
+            width=ew,
             height=22,
             textvariable=self.destination_folder_var,
         )
-        self.destination_folder_audio_entry.place(x=20, y=188 + offset * 2)
+        self.destination_folder_audio_entry.place(x=xgap, y=188 + offset * 2)
         self.export_dir_button_audio = customtkinter.CTkButton(
             self.search_by_audio_tab,
             **self.common_configs["buttonBrowse"],
-            width=110,
+            width=bw,
             height=22,
             command=lambda: browse_folder(self.destination_folder_audio_entry),
         )
-        self.export_dir_button_audio.place(x=350, y=188 + offset * 2)
+        self.export_dir_button_audio.place(x=rbx, y=188 + offset * 2)
 
         self.librarylocationlabel_audio = customtkinter.CTkLabel(
             self.search_by_audio_tab,
@@ -456,19 +526,19 @@ class App:
         self.liblocentry_audio = customtkinter.CTkEntry(
             self.search_by_audio_tab,
             **self.common_configs["entry"],
-            width=320,
+            width=ew,
             height=22,
             textvariable=self.embedding_map_dir_var,
         )
-        self.liblocentry_audio.place(x=20, y=250 + offset * 3)
+        self.liblocentry_audio.place(x=xgap, y=250 + offset * 3)
         self.liblocbrowse_audio = customtkinter.CTkButton(
             self.search_by_audio_tab,
             **self.common_configs["buttonBrowse"],
-            width=110,
+            width=bw,
             height=22,
             command=lambda: browse_folder(self.liblocentry),
         )
-        self.liblocbrowse_audio.place(x=350, y=250 + offset * 3)
+        self.liblocbrowse_audio.place(x=rbx, y=250 + offset * 3)
 
         self.searchbyaudio_button = customtkinter.CTkButton(
             self.search_by_audio_tab,
@@ -478,7 +548,7 @@ class App:
             height=44,
             command=lambda: validate_and_run("audio"),
         )
-        self.searchbyaudio_button.place(x=90, y=300 + offset * 5)
+        self.searchbyaudio_button.place(x=round(iw / 2) - 150, y=300 + offset * 5)
         self.onHover(self.searchbyaudio_button)
 
         self.input_mode_notebook.add(self.search_by_audio_tab, text="Search By Audio")
@@ -487,18 +557,18 @@ class App:
 
         # --------------------- Analyse New Library ---------------------
         self.extraction_notebook = Notebook(self.analyse_new_library_tab)
-        self.extraction_notebook.place(x=8, y=66, width=480, height=460)
+        self.extraction_notebook.place(x=8, y=66, width=iw, height=ih)
 
         self.embedding_extraction_tab = Frame(self.extraction_notebook)
         self.embedding_extraction_tab.configure(bg=self.default_theme["bg_accent"])
-        self.embedding_extraction_tab.place(x=0, y=0, width=476, height=372)
+        self.embedding_extraction_tab.place(x=0, y=0, )
 
         self.analyse_new_library_label = customtkinter.CTkLabel(
             self.analyse_new_library_tab,
             text="Analyse A New Library",
             **self.common_configs["labelLarge"],
         )
-        self.analyse_new_library_label.place(x=18, y=6)
+        self.analyse_new_library_label.place(x=xgap, y=6)
 
         self.library_path_label = customtkinter.CTkLabel(
             self.embedding_extraction_tab,
@@ -511,19 +581,19 @@ class App:
         self.audio_collection_entry = customtkinter.CTkEntry(
             self.embedding_extraction_tab,
             **self.common_configs["entry"],
-            width=320,
+            width=ew,
             height=22,
             textvariable=self.audio_collection_var,
         )
-        self.audio_collection_entry.place(x=20, y=44 + offset)
+        self.audio_collection_entry.place(x=xgap, y=44 + offset)
         self.libpath_browse_button = customtkinter.CTkButton(
             self.embedding_extraction_tab,
             **self.common_configs["buttonBrowse"],
-            width=110,
+            width=bw,
             height=22,
             command=lambda: browse_folder(self.audio_collection_entry),
         )
-        self.libpath_browse_button.place(x=350, y=44 + offset)
+        self.libpath_browse_button.place(x=rbx, y=44 + offset)
 
         self.library_index_saveloc_label = customtkinter.CTkLabel(
             self.embedding_extraction_tab,
@@ -536,10 +606,11 @@ class App:
         self.save_emap_location_entry = customtkinter.CTkEntry(
             self.embedding_extraction_tab,
             **self.common_configs["entry"],
-            width=320,
+            width=ew,
             height=22,
+            textvariable=self.save_emap_location_var,
         )
-        self.save_emap_location_entry.place(x=20, y=120 + offset)
+        self.save_emap_location_entry.place(x=xgap, y=120 + offset)
         self.libindex_savepath_button = customtkinter.CTkButton(
             self.embedding_extraction_tab,
             **self.common_configs["buttonBrowse"],
@@ -547,7 +618,7 @@ class App:
             height=22,
             command=lambda: browse_folder(self.save_emap_location_entry),
         )
-        self.libindex_savepath_button.place(x=350, y=120 + offset)
+        self.libindex_savepath_button.place(x=rbx, y=120 + offset)
 
         self.library_name_label = customtkinter.CTkLabel(
             self.embedding_extraction_tab,
@@ -560,10 +631,11 @@ class App:
         self.library_name = customtkinter.CTkEntry(
             self.embedding_extraction_tab,
             **self.common_configs["entry"],
-            width=440,
+            width=iw - (2 * xgap),
             height=22,
+            textvariable=self.library_name_var,
         )
-        self.library_name.place(x=20, y=188 + offset * 2)
+        self.library_name.place(x=xgap, y=188 + offset * 2)
 
         self.fileformat_label = customtkinter.CTkLabel(
             self.embedding_extraction_tab,
@@ -576,11 +648,11 @@ class App:
         self.file_type_entry = customtkinter.CTkComboBox(
             self.embedding_extraction_tab,
             **self.common_configs["entry"],
-            width=110,
+            width=bw,
             height=22,
             values=["any", ".wav", ".flac", ".mp3"],
         )
-        self.file_type_entry.place(x=350, y=250 + offset * 3)
+        self.file_type_entry.place(x=rbx, y=250 + offset * 3)
 
         self.analyse_button = customtkinter.CTkButton(
             self.embedding_extraction_tab,
@@ -590,7 +662,7 @@ class App:
             height=44,
             command=analyze_audio_collection,
         )
-        self.analyse_button.place(x=90, y=300 + offset * 5)
+        self.analyse_button.place(x=round(iw / 2) - 150, y=300 + offset * 5)
         self.onHover(self.analyse_button)
 
         self.extraction_notebook.add(
@@ -637,7 +709,29 @@ if __name__ == "__main__":
 
         args = parser.parse_args()
         run_sample_finder_cli(args)
-    
+
     else:
+        if not os.path.exists(LAST_STATE_FILE_SF):
+            os.makedirs(os.path.dirname(LAST_STATE_FILE_SF), exist_ok=True)
+            with open(LAST_STATE_FILE_SF, "w") as f:
+                json.dump(
+                    {
+                        "destination_folder": "",
+                        "embedding_map_dir": "",
+                    },
+                    f,
+                )
+        if not os.path.exists(LAST_STATE_FILE_ANL):
+            os.makedirs(os.path.dirname(LAST_STATE_FILE_ANL), exist_ok=True)
+            with open(LAST_STATE_FILE_ANL, "w") as f:
+                json.dump(
+                    {
+                        "audio_collection_dir": "",
+                        "save_emap_location": "",
+                        "emap_name": "",
+                    },
+                    f,
+                )
+
         a = App(0)
         a.widget.mainloop()
