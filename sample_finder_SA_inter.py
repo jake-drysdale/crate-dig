@@ -287,6 +287,54 @@ def process_new_audio_sample(
         shutil.copy(src_path, destination_folder)
         print(f"Copied {src_path} to {destination_folder}")
 
+################# PLAYLIST GENERATION #################
+
+def process_iterative_samples(
+    input_value,
+    embeddings_index: AnnoyIndex,
+    path_map: dict,
+    n_samples,
+    destination_folder,
+    is_text,
+    rename=False
+):
+    """
+    Process an input to iteratively find the closest samples, creating a chain of related samples without repetition.
+    Files are optionally renamed in sequential order starting from 0 based on the 'rename' parameter.
+    """
+    current_embedding = extract_embedding(input_value, is_text)
+    used_ids = set()
+    file_counter = 0  # Initialize a counter to name files sequentially if renaming
+
+    for _ in range(n_samples):
+        nearest_ids = embeddings_index.get_nns_by_vector(current_embedding, n_samples + len(used_ids))
+        # Find the first unused sample
+        next_sample_id = next((nid for nid in nearest_ids if nid not in used_ids), None)
+
+        if next_sample_id is None:
+            print("No new unique samples available.")
+            break
+
+        # Mark this sample as used
+        used_ids.add(next_sample_id)
+
+        # Update current embedding to the last found sample's embedding
+        src_path = path_map[str(next_sample_id)]
+        current_embedding = extract_embedding(src_path, is_text)
+
+        # Construct the destination path based on the rename argument
+        if rename:
+            file_extension = os.path.splitext(src_path)[1]  # Get the file extension from the source path
+            dest_path = os.path.join(destination_folder, f"{file_counter}{file_extension}")
+        else:
+            dest_path = os.path.join(destination_folder, os.path.basename(src_path))
+
+        # Copy the file to the destination folder with the new or original name
+        shutil.copy(src_path, dest_path)
+        print(f"Copied {src_path} to {dest_path}")
+
+        # Increment the file counter for the next file name if renaming
+        file_counter += 1
 
 ################# LOADING MODELS AND CHECKPOINTS #################
 
