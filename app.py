@@ -662,7 +662,7 @@ class App:
             height=44,
             command=analyze_audio_collection,
         )
-        self.analyse_button.place(x=round(iw / 2) - 150, y=300 + offset * 5)
+        self.analyse_button.place(x=round(iw / 2) - 170, y=300 + offset * 5)
         self.onHover(self.analyse_button)
 
         self.extraction_notebook.add(
