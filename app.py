@@ -182,7 +182,7 @@ class App:
                     n_samples,
                     destination_folder,
                     embedding_map_dir,
-                    is_text=(input_type == "Text"),
+                    is_text=(input_type == "text"),
                 )
                 run_sample_finder_cli(args)
 
