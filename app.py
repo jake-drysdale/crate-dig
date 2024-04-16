@@ -1,7 +1,8 @@
 import sys
 import json
 import tkinter as tk
-from tkinter import StringVar, IntVar, HORIZONTAL, END, Tk, Frame
+from tkinter import DoubleVar, StringVar, IntVar, HORIZONTAL, END, Frame
+import tkinter.font
 from tkinter import filedialog, messagebox
 from tkinter.ttk import Notebook
 from sample_finder_SA_inter import (
@@ -11,6 +12,7 @@ from sample_finder_SA_inter import (
     build_embeddings_index,
     save_embeddings_index,
 )
+
 # from sample_finder_SA_inter import process_iterative_samples as process_new_audio_sample
 import os
 import argparse
@@ -46,7 +48,7 @@ class CLIArgs:
 def run_sample_finder_cli(args):
 
     embeddings_index, path_map = load_embeddings_index(args.embedding_map_dir)
-    process_new_audio_sample(
+    return process_new_audio_sample(
         args.input_value,
         embeddings_index,
         path_map,
@@ -102,6 +104,11 @@ class App:
                 "font": (self.default_theme["font"], self.default_theme["font_size"]),
                 "state": "normal",
             },
+            "entryTk": {
+                "fg": self.default_theme["bg_dark"],
+                "bg": self.default_theme["text"],
+                "state": "normal",
+            },
             "buttonMain": {
                 "fg_color": self.default_theme["accent"],
                 "text_color": self.default_theme["bg_dark"],
@@ -136,7 +143,7 @@ class App:
         Create the GUI for the application.
         """
         dw = 800
-        dh = 560
+        dh = 860
 
         if parent == 0:
             self.widget = customtkinter.CTk()
@@ -145,7 +152,7 @@ class App:
             self.widget.resizable(True, True)
         else:
             self.widget = Frame(parent)
-            self.widget.place(x=0, y=0, width=500, height=560)
+            self.widget.place(x=0, y=0, width=dw, height=dh)
 
         offset = 10
 
@@ -201,6 +208,7 @@ class App:
             """
             Validate the input fields and run the sample finder.
             """
+
             try:
                 if input_type == "text":
                     input_value = self.text_prompt_entry.get()
@@ -232,7 +240,21 @@ class App:
                     embedding_map_dir,
                     is_text=(input_type == "text"),
                 )
-                run_sample_finder_cli(args)
+                result = run_sample_finder_cli(args)
+                self.playlist_textbox_audio.delete("1.0", END)
+                self.playlist_textbox_text.delete("1.0", END)
+                self.playlist_textbox_audio.insert(
+                    "1.0",
+                    "\n".join(
+                        f"{index+1}. {path}" for index, path in enumerate(result)
+                    ),
+                )
+                self.playlist_textbox_text.insert(
+                    "1.0",
+                    "\n".join(
+                        f"{index+1}. {path}" for index, path in enumerate(result)
+                    ),
+                )
 
                 messagebox.showinfo("Success", "Operation Completed Successfully")
             except ValueError:
@@ -309,6 +331,7 @@ class App:
         )
 
         # --------------------- Sample Finder ---------------------
+
         iw = dw - 20
         ih = dh - 100
         xgap = 20
@@ -317,8 +340,9 @@ class App:
         ew = iw - (3 * xgap + bw)
 
         self.input_mode_notebook = Notebook(self.sample_finder_tab)
-
         self.input_mode_notebook.place(x=8, y=66, width=iw, height=ih)
+
+        # --------------------- Sample Finder: Search By Text ---------------------
 
         self.search_by_text_tab = Frame(self.input_mode_notebook)
         self.search_by_text_tab.configure(bg=self.default_theme["bg_accent"])
@@ -432,6 +456,19 @@ class App:
         )
         self.liblocbrowse.place(x=rbx, y=250 + offset * 3)
 
+        textbox_h = 290
+        textbox_y = 300 + offset * 8 + 44
+        self.playlist_textbox_text = customtkinter.CTkTextbox(
+            self.search_by_text_tab,
+            **self.common_configs["entry"],
+            width=iw - (2 * xgap),
+            height=textbox_h,
+            wrap="none",
+        )
+        self.playlist_textbox_text.place(x=xgap, y=textbox_y)
+
+        # --------------------- Run Button ---------------------
+
         self.searchbytextbutton = customtkinter.CTkButton(
             self.search_by_text_tab,
             text="Run Sample Finder",
@@ -444,6 +481,8 @@ class App:
         self.onHover(self.searchbytextbutton)
 
         self.input_mode_notebook.add(self.search_by_text_tab, text="Search By Text")
+
+        # --------------------- Sample Finder: Search By Audio ---------------------
 
         self.search_by_audio_tab = Frame(self.input_mode_notebook)
         self.search_by_audio_tab.configure(bg=self.default_theme["bg_accent"])
@@ -558,6 +597,18 @@ class App:
         )
         self.liblocbrowse_audio.place(x=rbx, y=250 + offset * 3)
 
+        self.playlist_textbox_audio = customtkinter.CTkTextbox(
+            self.search_by_audio_tab,
+            **self.common_configs["entry"],
+            width=iw - (2 * xgap),
+            height=textbox_h,
+            wrap="none",
+        )
+
+        self.playlist_textbox_audio.place(x=xgap, y=textbox_y)
+
+        # --------------------- Run Button ---------------------
+
         self.searchbyaudio_button = customtkinter.CTkButton(
             self.search_by_audio_tab,
             text="Run Sample Finder",
@@ -574,6 +625,7 @@ class App:
         self.app_notebook.add(self.sample_finder_tab, text="Sample Finder")
 
         # --------------------- Analyse New Library ---------------------
+
         self.extraction_notebook = Notebook(self.analyse_new_library_tab)
         self.extraction_notebook.place(x=8, y=66, width=iw, height=ih)
 

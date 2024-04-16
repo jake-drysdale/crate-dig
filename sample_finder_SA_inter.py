@@ -268,6 +268,13 @@ def load_embeddings_index(embedding_path_dir) -> tuple[AnnoyIndex, dict]:
 
 
 ################# PROCESS INPUT #################
+def process_path(mode, **kwargs):
+    """Process a path based on the mode: 'list' or 'copy'."""
+    if mode == "copy":
+        shutil.copy(kwargs["src_path"], kwargs["dest_path"])
+        print(f"Copied {kwargs['src_path']} to {kwargs['dest_path']}")
+        return kwargs["dest_path"]
+    return kwargs["src_path"]
 
 
 def process_new_audio_sample(
@@ -277,17 +284,24 @@ def process_new_audio_sample(
     n_samples,
     destination_folder,
     is_text,
+    mode="list",
 ):
     # def process_new_audio_sample(new_audio_path, embeddings_index, path_map, n_samples, destination_folder, text=False):
     """Process a new audio sample: Extract embedding, find closest samples, copy to destination."""
     new_embedding = extract_embedding(input_value, is_text)
     nearest_ids = embeddings_index.get_nns_by_vector(new_embedding, n_samples)
+    result = []
     for nearest_id in nearest_ids:
         src_path = path_map[str(nearest_id)]
-        shutil.copy(src_path, destination_folder)
-        print(f"Copied {src_path} to {destination_folder}")
+        result.append(
+            process_path(mode, src_path=src_path, destination_folder=destination_folder)
+        )
+
+    return result
+
 
 ################# PLAYLIST GENERATION #################
+
 
 def process_iterative_samples(
     input_value,
@@ -296,7 +310,7 @@ def process_iterative_samples(
     n_samples,
     destination_folder,
     is_text,
-    rename=False
+    rename=False,
 ):
     """
     Process an input to iteratively find the closest samples, creating a chain of related samples without repetition.
@@ -307,7 +321,9 @@ def process_iterative_samples(
     file_counter = 0  # Initialize a counter to name files sequentially if renaming
 
     for _ in range(n_samples):
-        nearest_ids = embeddings_index.get_nns_by_vector(current_embedding, n_samples + len(used_ids))
+        nearest_ids = embeddings_index.get_nns_by_vector(
+            current_embedding, n_samples + len(used_ids)
+        )
         # Find the first unused sample
         next_sample_id = next((nid for nid in nearest_ids if nid not in used_ids), None)
 
@@ -324,8 +340,12 @@ def process_iterative_samples(
 
         # Construct the destination path based on the rename argument
         if rename:
-            file_extension = os.path.splitext(src_path)[1]  # Get the file extension from the source path
-            dest_path = os.path.join(destination_folder, f"{file_counter}{file_extension}")
+            file_extension = os.path.splitext(src_path)[
+                1
+            ]  # Get the file extension from the source path
+            dest_path = os.path.join(
+                destination_folder, f"{file_counter}{file_extension}"
+            )
         else:
             dest_path = os.path.join(destination_folder, os.path.basename(src_path))
 
@@ -335,6 +355,7 @@ def process_iterative_samples(
 
         # Increment the file counter for the next file name if renaming
         file_counter += 1
+
 
 ################# LOADING MODELS AND CHECKPOINTS #################
 
