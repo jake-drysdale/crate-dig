@@ -185,6 +185,7 @@ class App:
             value=last_state_anl.get("save_emap_location", "")
         )
         self.library_name_var = StringVar(value=last_state_anl.get("emap_name", ""))
+        self.progress_var = DoubleVar(value=0.0)
 
         def browse_folder(entry):
             """
@@ -294,7 +295,10 @@ class App:
             try:
                 wav_files = find_wav_files(audio_collection_dir, file_type)
                 embeddings_index, path_map = build_embeddings_index(
-                    wav_files, os.path.join(save_emap_full_path, "embeddings_list.npy")
+                    wav_files,
+                    os.path.join(save_emap_full_path, "embeddings_list.npy"),
+                    self.analysis_progressbar,
+                    self.widget.update_idletasks,
                 )
                 save_embeddings_index(
                     embeddings_index,
@@ -308,7 +312,7 @@ class App:
                 )
             except Exception as e:
                 messagebox.showerror("Error", f"An error occurred: {e}")
-
+        
         def update_entries_number(entries, new_value):
             for entry in entries:
                 entry.set(new_value)
@@ -726,6 +730,19 @@ class App:
             values=["any", ".wav", ".flac", ".mp3"],
         )
         self.file_type_entry.place(x=rbx, y=250 + offset * 3)
+
+        self.analysis_progressbar = customtkinter.CTkProgressBar(
+            self.embedding_extraction_tab,
+            width=iw - (2 * xgap),
+            height=22,
+            variable=self.progress_var,
+            progress_color=self.default_theme["accent"],
+            bg_color=self.default_theme["bg_light"],
+            corner_radius=2,
+            determinate_speed=0.1,
+            mode="determinate",
+        )
+        self.analysis_progressbar.place(x=xgap, y=350 + offset * 8)
 
         self.analyse_button = customtkinter.CTkButton(
             self.embedding_extraction_tab,

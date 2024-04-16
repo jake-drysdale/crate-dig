@@ -35,8 +35,7 @@ def find_wav_files(root_dir, file_types):
                 audio_files.append(os.path.join(subdir, file))
     return audio_files
 
-
-def build_embeddings_index(wav_files, embeddings_list_path):
+def build_embeddings_index(wav_files, embeddings_list_path, progressbar, refresh):
     """Build an index of embeddings for the given files and return embeddings."""
     f = 1024  # embedding size is 1024
     t = AnnoyIndex(f, "angular")  # Using Annoy for nearest neighbor search
@@ -46,19 +45,26 @@ def build_embeddings_index(wav_files, embeddings_list_path):
     embeddings_list = np.memmap(
         embeddings_list_path, dtype="float32", mode="w+", shape=shape
     )
+    done = 0
+    progressbar.set(0)
+    progressbar.start()
 
     for i, file_path in tqdm(
-        enumerate(wav_files), desc="Building embeddings index", total=len(wav_files)
+        enumerate(wav_files), desc="Building embeddings index", total=len(wav_files), unit="files"
     ):
         embedding = extract_embedding(file_path, False)
         embedding_np = embedding.detach().cpu().numpy()
         t.add_item(i, embedding_np)
         embeddings_path_map[i] = file_path
         embeddings_list[i] = embedding_np
+        done += 1
+        progressbar.set(done / len(wav_files))
+        refresh()
         # embeddings_list.append(embedding)  # Add embedding to list
         del embedding  # Explicitly delete if it's no longer needed
         gc.collect()  # Force garbage collection
 
+    progressbar.stop()
     t.build(10)  # 10 trees
     return t, embeddings_path_map  # Return embeddings_list
 
@@ -244,7 +250,7 @@ def preprocess_text(text_queries, text_model="gpt2", text_len=77, use_cuda=False
 ################# EMBEDDING EXTRACTION AND LOADING #################
 
 
-def extract_embedding(audio_path, is_text):
+def extract_embedding(audio_path, is_text) -> torch.Tensor:
     if is_text:
         # embedding = clap_model.get_text_embeddings([audio_path])
         text_input = preprocess_text([audio_path])
