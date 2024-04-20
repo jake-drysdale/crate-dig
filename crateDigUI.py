@@ -399,10 +399,10 @@ class App(customtkinter.CTk):
             text="Analyze and Save Collection",
             command=self.analyze_audio_collection,
             width=290,
-            anchor="s",
+            
         )
         self.libinfo_button.grid(
-            row=8, column=0, padx=20, pady=(10, 20), columnspan=2, sticky="s"
+            row=8, column=0, padx=20, pady=(10, 20), columnspan=2, 
         )
 
         self.analysis_progressbar = customtkinter.CTkProgressBar(
@@ -414,7 +414,7 @@ class App(customtkinter.CTk):
             corner_radius=5,
         )
         self.analysis_progressbar.grid(
-            row=9, column=0, padx=20, pady=(10, 20), columnspan=2, sticky="s"
+            row=9, column=0, padx=20, pady=(10, 20), columnspan=2, sticky="ew"
         )
 
     def browse_folder(self, entry):
