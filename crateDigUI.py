@@ -26,6 +26,7 @@ customtkinter.set_default_color_theme(
 LAST_STATE = "./UserLibrary/state/state.json"
 UserLibraryPath = __file__.replace("crateDigUI.py", "UserLibrary")
 UINAME = "CrateDigAI"
+AUDIO_FORMATS = (".wav", ".flac", ".mp3")
 
 class CLIArgs:
     def __init__(
@@ -72,29 +73,7 @@ DEFAULTS = {
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
-        with open(LAST_STATE, "r", encoding="utf-8") as f:
-            last_state = json.load(f)
-        self.AnalysedLibraries = Variable(value=last_state.get("AnalysedLibraries", {}))
-        self.LastUsedLibrary = Variable(
-            value=last_state.get("LastUsedLibrary", DEFAULTS["LastUsedLibrary"])
-        )
-        self.UserLibraryPath = Variable(
-            value=last_state.get("UserLibraryPath", DEFAULTS["UserLibraryPath"])
-        )
-        self.PlaylistExportPath = Variable(
-            value=last_state.get("PlaylistExportPath", DEFAULTS["PlaylistExportPath"])
-        )
-        self.EmbeddingsExportPath = Variable(
-            value=last_state.get(
-                "EmbeddingsExportPath", DEFAULTS["EmbeddingsExportPath"]
-            )
-        )
-        self.ExportFilesToPath = Variable(
-            value=last_state.get("ExportFilesToPath", DEFAULTS["ExportFilesToPath"])
-        )
-
-        self.NewLibraryPath = StringVar(value="")
-
+        self.load_state()
         def get_library_path():
             for libname, libpath in self.AnalysedLibraries.get():
                 if libname == self.LastUsedLibrary.get():
@@ -147,10 +126,12 @@ class App(customtkinter.CTk):
         )
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
         self.sidebar_button_1 = customtkinter.CTkButton(
-            self.sidebar_frame, text="Show Library Info", command=self.toggle_library_visibility
+            self.sidebar_frame,
+            text="Show Library Info",
+            command=self.toggle_library_visibility,
         )
         self.sidebar_button_1.grid(row=1, column=0, padx=20, pady=10)
-        
+
         self.scaling_label = customtkinter.CTkLabel(
             self.sidebar_frame, text="UI Scaling:", anchor="w"
         )
@@ -170,7 +151,6 @@ class App(customtkinter.CTk):
         self.search_button.grid(
             row=3, column=1, padx=(20, 20), pady=(0, 20), sticky="nsew"
         )
-
 
         # create tabview
         tabnames = ["Playlists", "Sample Finder", "Analyse New Library"]
@@ -274,7 +254,7 @@ class App(customtkinter.CTk):
         #     row=0, column=2, rowspan=5, padx=(10, 20), pady=(10, 10), sticky="ns"
         # )
 
-        # # create scrollable frame
+        # create scrollable frame
         # self.scrollable_frame = customtkinter.CTkScrollableFrame(
         #     self, label_text="CTkScrollableFrame"
         # )
@@ -338,7 +318,7 @@ class App(customtkinter.CTk):
             pady=(38, 20),
             sticky="nsew",
         )
-        
+
         self.library_sidebar_label = customtkinter.CTkLabel(
             self.library_sidebar,
             text="Library",
@@ -378,36 +358,62 @@ class App(customtkinter.CTk):
             row=3, column=0, columnspan=2, padx=20, pady=(50, 10), sticky="w"
         )
 
+        self.library_name_label = customtkinter.CTkLabel(
+            self.library_sidebar, text="New Library Name:", anchor="w"
+        )
+        self.library_name_label.grid(
+            row=4, column=0, columnspan=2, padx=20, pady=(10, 0), sticky="w"
+        )
+        self.new_library_name_entry = customtkinter.CTkTextbox(
+            self.library_sidebar,
+            width=290,
+            height=20,
+            wrap="none",
+        )
+        self.new_library_name_entry.grid(
+            row=5, column=0, columnspan=2, padx=(20, 0), pady=(10, 10), sticky="w"
+        )
+
         self.library_path_label = customtkinter.CTkLabel(
             self.library_sidebar, text="New Library Path:", anchor="w"
         )
         self.library_path_label.grid(
-            row=4, column=0, columnspan=2, padx=20, pady=(10, 0), sticky="w"
+            row=6, column=0, columnspan=2, padx=20, pady=(10, 0), sticky="w"
         )
-
         self.library_path_entry = customtkinter.CTkTextbox(
             self.library_sidebar, width=200, height=20, wrap="none"
         )
-        self.library_path_entry.grid(row=5, column=0, padx=(20, 0), pady=(10, 10))
+        self.library_path_entry.grid(row=7, column=0, padx=(20, 0), pady=(10, 10))
         self.browse_button = customtkinter.CTkButton(
             self.library_sidebar,
             text="browse",
             width=80,
             command=lambda: self.browse_folder(self.library_path_entry),
         )
-        self.browse_button.grid(row=5, column=1, padx=(10, 20), pady=(10, 10))
+        self.browse_button.grid(row=7, column=1, padx=(10, 20), pady=(10, 10))
 
         self.libinfo_button = customtkinter.CTkButton(
             self.library_sidebar,
-            text="Library Info",
-            command=lambda: print(get_library_path()),
+            text="Analyze and Save Collection",
+            command=self.analyze_audio_collection,
             width=290,
             anchor="s",
         )
         self.libinfo_button.grid(
-            row=6, column=0, padx=20, pady=(10, 20), columnspan=2, sticky="s"
+            row=8, column=0, padx=20, pady=(10, 20), columnspan=2, sticky="s"
         )
 
+        self.analysis_progressbar = customtkinter.CTkProgressBar(
+            self.library_sidebar,
+            width=290,
+            height=20,
+            variable=self.progress_var,
+            mode="determinate",
+            corner_radius=5,
+        )
+        self.analysis_progressbar.grid(
+            row=9, column=0, padx=20, pady=(10, 20), columnspan=2, sticky="s"
+        )
 
     def browse_folder(self, entry):
         """
@@ -494,51 +500,105 @@ class App(customtkinter.CTk):
         """
         Analyze the audio collection and save the embeddings index.
         """
-        audio_collection_dir = self.audio_collection_entry.get()
-        file_type = self.file_type_entry.get()
-        if file_type == "any":
-            file_type = (".wav", ".flac", ".mp3")
-        emap_name = self.library_name_var.get()
-        save_emap_location = self.save_emap_location_var.get()
-        with open(LAST_STATE_FILE_ANL, "w") as f:
+        new_library_path = self.library_path_entry.get("1.0", END).strip()
+        new_library_name = self.new_library_name_entry.get("1.0", END).strip()
+        default_emap_dir = self.EmbeddingsExportPath.get()
+
+        if not new_library_path or not new_library_name or not default_emap_dir:
+            messagebox.showwarning("Warning", "Please fill in all required fields.")
+            return
+        
+        full_emap_path = os.path.join(default_emap_dir, new_library_name)
+        
+        os.makedirs(full_emap_path, exist_ok=True)
+
+        try:
+            wav_files = find_wav_files(new_library_path, AUDIO_FORMATS)
+            embeddings_index, path_map = build_embeddings_index(
+                wav_files,
+                os.path.join(full_emap_path, "embeddings_list.npy"),
+                self.analysis_progressbar,
+                self.library_sidebar.update_idletasks,
+            )
+            save_embeddings_index(
+                embeddings_index,
+                path_map,
+                os.path.join(full_emap_path, "embeddings.ann"),
+                os.path.join(full_emap_path, "path_map.json"),
+            )
+            self.add_library_to_analyzed(new_library_name, new_library_path)
+
+            # messagebox.showinfo(
+            #     "Success",
+            #     f"Analysis completed. Embeddings saved to {full_emap_path}.",
+            # )
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {e}")
+
+    def load_state(self, state_path=LAST_STATE):
+        with open(state_path, "r", encoding="utf-8") as f:
+            last_state = json.load(f)
+        self.AnalysedLibraries = Variable(value=last_state.get("AnalysedLibraries", {}))
+        self.LastUsedLibrary = Variable(
+            value=last_state.get("LastUsedLibrary", DEFAULTS["LastUsedLibrary"])
+        )
+        self.UserLibraryPath = Variable(
+            value=last_state.get("UserLibraryPath", DEFAULTS["UserLibraryPath"])
+        )
+        self.PlaylistExportPath = Variable(
+            value=last_state.get("PlaylistExportPath", DEFAULTS["PlaylistExportPath"])
+        )
+        self.EmbeddingsExportPath = Variable(
+            value=last_state.get(
+                "EmbeddingsExportPath", DEFAULTS["EmbeddingsExportPath"]
+            )
+        )
+        self.ExportFilesToPath = Variable(
+            value=last_state.get("ExportFilesToPath", DEFAULTS["ExportFilesToPath"])
+        )
+        self.NewLibraryPath = StringVar(value="")
+
+    def save_state(self, state_path=LAST_STATE):
+
+        # list[tuple[str,str]]
+        AnalysedLibraries = self.AnalysedLibraries.get()
+        # path str
+        LastUsedLibrary = self.LastUsedLibrary.get()
+        UserLibraryPath = self.UserLibraryPath.get()
+        PlaylistExportPath = self.PlaylistExportPath.get()
+        EmbeddingsExportPath = self.EmbeddingsExportPath.get()
+        ExportFilesToPath = self.ExportFilesToPath.get()
+
+        with open(state_path, "w") as f:
             json.dump(
                 {
-                    "audio_collection_dir": audio_collection_dir,
-                    "emap_name": emap_name,
-                    "save_emap_location": save_emap_location,
+                    "AnalysedLibraries": AnalysedLibraries,
+                    "LastUsedLibrary": LastUsedLibrary,
+                    "UserLibraryPath": UserLibraryPath,
+                    "PlaylistExportPath": PlaylistExportPath,
+                    "EmbeddingsExportPath": EmbeddingsExportPath,
+                    "ExportFilesToPath": ExportFilesToPath,
                 },
                 f,
                 indent=4,
             )
 
-        if not audio_collection_dir or not emap_name or not save_emap_location:
-            messagebox.showwarning("Warning", "Please fill in all required fields.")
-            return
+    def add_library_to_analyzed(self, library_name, library_path):
+        AnalysedLibraries = self.AnalysedLibraries.get()
+        self.AnalysedLibraries.set([*AnalysedLibraries, (library_name, library_path)])
+        # update the optionmenu
+        self.library_name_entry.configure(
+            values=[libname for libname, libpath in self.AnalysedLibraries.get()]
+        )
+        # set the last used library to the new library
+        self.LastUsedLibrary.set(library_name)
+        self.save_state()
+        messagebox.showinfo("Success", "Library added successfully.")
 
-        save_emap_full_path = os.path.join(save_emap_location, emap_name)
-        os.makedirs(save_emap_full_path, exist_ok=True)
-        self.embedding_map_dir_var.set(save_emap_full_path)
-
-        try:
-            wav_files = find_wav_files(audio_collection_dir, file_type)
-            embeddings_index, path_map = build_embeddings_index(
-                wav_files,
-                os.path.join(save_emap_full_path, "embeddings_list.npy"),
-                self.analysis_progressbar,
-                self.widget.update_idletasks,
-            )
-            save_embeddings_index(
-                embeddings_index,
-                path_map,
-                os.path.join(save_emap_full_path, "embeddings.ann"),
-                os.path.join(save_emap_full_path, "path_map.json"),
-            )
-            messagebox.showinfo(
-                "Success",
-                f"Analysis completed. Embeddings saved to {save_emap_full_path}.",
-            )
-        except Exception as e:
-            messagebox.showerror("Error", f"An error occurred: {e}")
+    def get_last_used_library_path(self):
+        return os.path.join(
+            self.EmbeddingsExportPath.get(), self.LastUsedLibrary.get()
+        )
 
     def update_entries_number(self, entries, new_value):
         for entry in entries:
