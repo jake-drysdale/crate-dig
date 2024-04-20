@@ -77,7 +77,7 @@ def save_embeddings_index(embeddings_index, path_map, index_path, path_map_path)
     """Save the embeddings index, path map, and embeddings list to files."""
     embeddings_index.save(index_path)
     with open(path_map_path, "w", encoding="utf-8") as f:
-        json.dump(path_map, f)
+        json.dump(path_map, f, indent=4)
     # np.save(embeddings_list_path, embeddings_list)  # Save embeddings list as .npy file
 
 

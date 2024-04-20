@@ -504,6 +504,12 @@ class App(customtkinter.CTk):
         """
         new_library_path = self.library_path_entry.get("1.0", END).strip()
         new_library_name = self.new_library_name_entry.get("1.0", END).strip()
+        if new_library_name in [libname for libname, libpath in self.AnalysedLibraries.get()]:
+            messagebox.showwarning(
+                "Warning", "Library with this name already exists. Please choose a different name."
+            )
+            return
+        
         default_emap_dir = self.EmbeddingsExportPath.get()
 
         if not new_library_path or not new_library_name or not default_emap_dir:
