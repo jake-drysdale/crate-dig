@@ -12,7 +12,7 @@ CrateDigAI is an advanced AI-powered application specifically designed for music
 
 CrateDigAI leverages advanced AI technology to analyze audio characteristics and metadata within your personal music collection, transforming how you find and use your samples and tracks. Here's how you can maximize your experience:
 
-- **Step 1:** Enter the characteristics of the musical elements you're looking for using a text prompt (e.g., "wobbly bass sounds"), or initiate your search with an audio prompt by uploading a sample or a full track.
+- **Step 1:** Enter the characteristics of the musical elements you're looking for using a text prompt (e.g., "wobbly bass sounds", "acoustic guitar", "music from the 80s"), or initiate your search with an audio prompt by uploading a sample or a full track.
 - **Step 2:** The AI analyzes your input, comparing it against your own collection to find matching or similar tracks and samples.
 - **Step 3:** Review the curated list of samples or songs that match your search criteria and save them to a new folder.
 - **Step 4:** Use CrateDigAI’s features to automatically create playlists of similar songs, enhancing your music production and listening experience.
@@ -24,7 +24,7 @@ This process not only simplifies finding the right sounds within your existing l
 ### Key Features of CrateDigAI
 
 - **Personalized Sample Discovery:** Explore your own audio files like never before, discovering deep cuts and unique tracks directly within your collection.
-- **Flexible Search Capabilities:** Beyond traditional audio parameters like genre or tempo, use text prompts to search for more abstract elements like "distorted basslines,", "hard hitting drums" or "sci-fi sound effects." CrateDigger AI intelligently finds audio that matches your creative descriptions.
+- **Flexible Search Capabilities:** Beyond traditional audio parameters like genre or tempo, use text prompts to search for more abstract elements like "distorted basslines,", "hard hitting drums" or "songs for a sci-fi film." CrateDigAI intelligently finds audio that matches your creative descriptions.
 - **Dynamic Playlist Generation:** Start with a prompt, either text or audio, and CrateDigger AI will generate a playlist by finding the best matching track, then continuously selecting subsequent tracks that flawlessly follow on from each other. This feature allows for the creation of cohesive and thematic playlists that evolve based on the characteristics of the starting prompt.
 - **Standalone Functionality:** Operate independently with a robust set of tools designed for efficient and effective sample management and discovery.
 **Open Source and Free:** CrateDigAI is completely open source and free to use. This encourages a community of developers and music enthusiasts to contribute to its improvement and adapt it to their needs.
