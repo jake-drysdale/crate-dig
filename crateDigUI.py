@@ -23,8 +23,8 @@ customtkinter.set_default_color_theme(
     "theme.json"
 )  # Themes: "blue" (standard), "green", "dark-blue"
 
-LAST_STATE = "./UserLibrary/state/state.json"
 UserLibraryPath = __file__.replace("crateDigUI.py", "UserLibrary")
+LAST_STATE = os.path.join(UserLibraryPath, "state", "state.json")
 UINAME = "CrateDigAI"
 AUDIO_FORMATS = (".wav", ".flac", ".mp3")
 
@@ -64,8 +64,8 @@ DEFAULTS = {
     "AnalysedLibraries": {},
     "LastUsedLibrary": "",
     "UserLibraryPath": UserLibraryPath,
-    "PlaylistExportPath": f"{UserLibraryPath}/playlists",
-    "EmbeddingsExportPath": f"{UserLibraryPath}/embeddings",
+    "PlaylistExportPath": os.path.join(UserLibraryPath, "playlists"),
+    "EmbeddingsExportPath": os.path.join(UserLibraryPath, "embeddings"),
     "ExportFilesToPath": "",
 }
 

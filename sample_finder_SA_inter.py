@@ -35,6 +35,7 @@ def find_wav_files(root_dir, file_types):
                 audio_files.append(os.path.join(subdir, file))
     return audio_files
 
+
 def build_embeddings_index(wav_files, embeddings_list_path, progressbar, refresh):
     """Build an index of embeddings for the given files and return embeddings."""
     f = 1024  # embedding size is 1024
@@ -50,7 +51,10 @@ def build_embeddings_index(wav_files, embeddings_list_path, progressbar, refresh
     progressbar.start()
 
     for i, file_path in tqdm(
-        enumerate(wav_files), desc="Building embeddings index", total=len(wav_files), unit="files"
+        enumerate(wav_files),
+        desc="Building embeddings index",
+        total=len(wav_files),
+        unit="files",
     ):
         embedding = extract_embedding(file_path, False)
         embedding_np = embedding.detach().cpu().numpy()
@@ -374,10 +378,13 @@ else:
 tokenizer_path = os.path.join(application_path, "gpt2_tokenizer")
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
-
 text_encoder_model = torch.jit.load(
-    os.path.join(application_path, "traced_text_encoder_model.pt")
+    os.path.join(
+        application_path, "UserLibrary", "models", "traced_text_encoder_model.pt"
+    )
 )
 audio_encoder_model = torch.jit.load(
-    os.path.join(application_path, "traced_audio_encoder_model.pt")
+    os.path.join(
+        application_path, "UserLibrary", "models", "traced_audio_encoder_model.pt"
+    )
 )
