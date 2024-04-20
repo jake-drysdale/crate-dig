@@ -22,8 +22,8 @@ import customtkinter
 customtkinter.set_appearance_mode("Dark")
 customtkinter.set_default_color_theme("dark-blue")
 
-LAST_STATE_FILE_SF = "state/last_state_samplefinder.json"
-LAST_STATE_FILE_ANL = "state/last_state_analyse_new_library.json"
+LAST_STATE_FILE_SF = "UserLibrary/state/last_state_samplefinder.json"
+LAST_STATE_FILE_ANL = "UserLibrary/state/last_state_analyse_new_library.json"
 
 
 class CLIArgs:
