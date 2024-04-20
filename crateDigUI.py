@@ -28,6 +28,7 @@ LAST_STATE = os.path.join(UserLibraryPath, "state", "state.json")
 UINAME = "CrateDigAI"
 AUDIO_FORMATS = (".wav", ".flac", ".mp3")
 
+
 class CLIArgs:
     def __init__(
         self,
@@ -61,7 +62,7 @@ def run_sample_finder_cli(args):
 
 
 DEFAULTS = {
-    "AnalysedLibraries": {},
+    "AnalysedLibraries": [],
     "LastUsedLibrary": "",
     "UserLibraryPath": UserLibraryPath,
     "PlaylistExportPath": os.path.join(UserLibraryPath, "playlists"),
@@ -74,6 +75,7 @@ class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
         self.load_state()
+
         def get_library_path():
             for libname, libpath in self.AnalysedLibraries.get():
                 if libname == self.LastUsedLibrary.get():
@@ -507,9 +509,9 @@ class App(customtkinter.CTk):
         if not new_library_path or not new_library_name or not default_emap_dir:
             messagebox.showwarning("Warning", "Please fill in all required fields.")
             return
-        
+
         full_emap_path = os.path.join(default_emap_dir, new_library_name)
-        
+
         os.makedirs(full_emap_path, exist_ok=True)
 
         try:
@@ -536,26 +538,25 @@ class App(customtkinter.CTk):
             messagebox.showerror("Error", f"An error occurred: {e}")
 
     def load_state(self, state_path=LAST_STATE):
-        with open(state_path, "r", encoding="utf-8") as f:
-            last_state = json.load(f)
-        self.AnalysedLibraries = Variable(value=last_state.get("AnalysedLibraries", {}))
-        self.LastUsedLibrary = Variable(
-            value=last_state.get("LastUsedLibrary", DEFAULTS["LastUsedLibrary"])
-        )
-        self.UserLibraryPath = Variable(
-            value=last_state.get("UserLibraryPath", DEFAULTS["UserLibraryPath"])
-        )
-        self.PlaylistExportPath = Variable(
-            value=last_state.get("PlaylistExportPath", DEFAULTS["PlaylistExportPath"])
-        )
-        self.EmbeddingsExportPath = Variable(
-            value=last_state.get(
-                "EmbeddingsExportPath", DEFAULTS["EmbeddingsExportPath"]
+        if os.path.exists(state_path):
+            with open(state_path, "r", encoding="utf-8") as f:
+                last_state = json.load(f)
+        else:
+            last_state = DEFAULTS
+
+        def load_variable(key):
+            return (
+                last_state.get(key, "")
+                if last_state.get(key, "") != ""
+                else DEFAULTS[key]
             )
-        )
-        self.ExportFilesToPath = Variable(
-            value=last_state.get("ExportFilesToPath", DEFAULTS["ExportFilesToPath"])
-        )
+
+        self.AnalysedLibraries = Variable(value=last_state.get("AnalysedLibraries", {}))
+        self.LastUsedLibrary = Variable(value=load_variable("LastUsedLibrary"))
+        self.UserLibraryPath = Variable(value=load_variable("UserLibraryPath"))
+        self.PlaylistExportPath = Variable(value=load_variable("PlaylistExportPath"))
+        self.EmbeddingsExportPath = Variable(value=load_variable("EmbeddingsExportPath"))
+        self.ExportFilesToPath = Variable(value=load_variable("ExportFilesToPath"))
         self.NewLibraryPath = StringVar(value="")
 
     def save_state(self, state_path=LAST_STATE):
@@ -596,9 +597,7 @@ class App(customtkinter.CTk):
         messagebox.showinfo("Success", "Library added successfully.")
 
     def get_last_used_library_path(self):
-        return os.path.join(
-            self.EmbeddingsExportPath.get(), self.LastUsedLibrary.get()
-        )
+        return os.path.join(self.EmbeddingsExportPath.get(), self.LastUsedLibrary.get())
 
     def update_entries_number(self, entries, new_value):
         for entry in entries:
@@ -636,6 +635,14 @@ class App(customtkinter.CTk):
 
 
 if __name__ == "__main__":
+    if not os.path.exists(UserLibraryPath):
+        os.makedirs(UserLibraryPath, exist_ok=True)
+        os.makedirs(os.path.join(UserLibraryPath, "state"), exist_ok=True)
+        os.makedirs(os.path.join(UserLibraryPath, "playlists"), exist_ok=True)
+        os.makedirs(os.path.join(UserLibraryPath, "embeddings"), exist_ok=True)
+        os.makedirs(os.path.join(UserLibraryPath, "models"), exist_ok=True)
+    print(DEFAULTS)
+
     app = App()
     app.hide_library_info()
     app.mainloop()
