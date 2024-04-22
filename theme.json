@@ -28,8 +28,8 @@
     },
     "CTkEntry": {
       "corner_radius": 6,
-      "border_width": 2,
-      "fg_color": ["#F9F9FA", "#2e2c36"],
+      "border_width": 0,
+      "fg_color": ["#F9F9FA", "#191721"],
       "border_color": ["#979DA2", "gray7"],
       "text_color": ["gray14", "gray84"],
       "placeholder_text_color": ["gray52", "gray62"]
@@ -138,17 +138,17 @@
     "CTkFont": {
       "macOS": {
         "family": "SF Display",
-        "size": 13,
+        "size": 14,
         "weight": "normal"
       },
       "Windows": {
         "family": "Roboto",
-        "size": 13,
+        "size": 14,
         "weight": "normal"
       },
       "Linux": {
-        "family": "Roboto",
-        "size": 13,
+        "family": "Space Grotesk",
+        "size": 14,
         "weight": "normal"
       }
     }
