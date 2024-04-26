@@ -8,3 +8,5 @@ embeddings/
 __pycache__/
 state
 UserLibrary/
+.ipynb_checkpoints/
+*.ipynb

@@ -321,15 +321,17 @@ def process_iterative_samples(
     destination_folder,
     is_text,
     rename=False,
+    mode="list",
 ):
     """
     Process an input to iteratively find the closest samples, creating a chain of related samples without repetition.
     Files are optionally renamed in sequential order starting from 0 based on the 'rename' parameter.
     """
+    print("Processing iterative samples...")
     current_embedding = extract_embedding(input_value, is_text)
     used_ids = set()
     file_counter = 0  # Initialize a counter to name files sequentially if renaming
-
+    result = []
     for _ in range(n_samples):
         nearest_ids = embeddings_index.get_nns_by_vector(
             current_embedding, n_samples + len(used_ids)
@@ -359,12 +361,13 @@ def process_iterative_samples(
         else:
             dest_path = os.path.join(destination_folder, os.path.basename(src_path))
 
-        # Copy the file to the destination folder with the new or original name
-        shutil.copy(src_path, dest_path)
-        print(f"Copied {src_path} to {dest_path}")
+        # add to result
+        result.append(process_path(mode, src_path=src_path, dest_path=dest_path))
 
         # Increment the file counter for the next file name if renaming
         file_counter += 1
+
+    return result
 
 
 ################# LOADING MODELS AND CHECKPOINTS #################
