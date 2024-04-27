@@ -10,3 +10,6 @@ state
 UserLibrary/
 .ipynb_checkpoints/
 *.ipynb
+build/
+dist/
+assets/models/

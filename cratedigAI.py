@@ -1,9 +1,15 @@
-from pprint import pprint
+import sys
+import os
 import json
+import argparse
+import customtkinter
+from PIL import Image
+from pprint import pprint
 from tkinter import DoubleVar, StringVar, IntVar, Variable, END
 from tkinter import filedialog, messagebox
 
-from sample_finder_SA_inter import (
+from utils import playlist
+from utils.inference import (
     load_embeddings_index,
     process_new_audio_sample,
     process_iterative_samples,
@@ -12,40 +18,79 @@ from sample_finder_SA_inter import (
     save_embeddings_index,
 )
 
-from utils import playlist
-
-# from sample_finder_SA_inter import process_iterative_samples as process_new_audio_sample
-import os
-import argparse
-import customtkinter
-from PIL import Image
-import sys
-
-# Check if running as a PyInstaller bundle
-if getattr(sys, "frozen", False):
-    application_path = sys._MEIPASS  # The path to the temporary folder where PyInstaller unpacks your bundle
-else:
-    application_path = os.path.dirname(os.path.abspath(__file__))  # The directory of your script
-
-# Define the full path to ableton.json
-theme_file_path = os.path.join(application_path, "ableton.json")
-
-# Use the dynamically determined path for setting the theme
-customtkinter.set_appearance_mode("Dark")  # Modes: "System" (standard), "Dark", "Light"
-customtkinter.set_default_color_theme(theme_file_path)  # Adjusted to use the full path
-
 UINAME = "CrateDig"
-
-UserLibraryPath = __file__.replace("crateDigUI.py", "UserLibrary")
-LAST_STATE = os.path.join(UserLibraryPath, "state", "state.json")
 AUDIO_FORMATS = (".wav", ".flac", ".mp3")
 REKORDBOX_EXT = ".xml"
 M3U_EXT = ".m3u"
 buttonfontparams = {"size": 14, "weight": "normal"}
 labelfontparams = {"size": 16, "weight": "bold"}
-
 XPAD = (10, 10)
 YPAD = (10, 20)
+
+
+def get_application_dir():
+    """
+    This function returns the directory where the executable is running
+    or the script file in a development environment.
+    """
+    if getattr(sys, "frozen", False):
+        # If the application is run as a bundled executable.
+        application_path = os.path.dirname(sys.executable)
+    else:
+        # If the application is run in a development environment.
+        application_path = os.path.dirname(os.path.abspath(__file__))
+
+    return application_path
+
+
+basepath = get_application_dir()
+UserLibraryPath = os.path.join(basepath, "UserLibrary")
+
+theme_file_path = os.path.join(basepath, "assets", "theme.json")
+customtkinter.set_appearance_mode("Dark")  # Modes: "System" (standard), "Dark", "Light"
+customtkinter.set_default_color_theme(theme_file_path)  # Adjusted to use the full path
+
+
+LAST_STATE = os.path.join(UserLibraryPath, "state", "state.json")
+DEFAULTS = {
+    "AnalysedLibraries": [],
+    "LastUsedLibrary": "",
+    "UserLibraryPath": UserLibraryPath,
+    "PlaylistExportPath": os.path.join(UserLibraryPath, "playlists"),
+    "EmbeddingsExportPath": os.path.join(UserLibraryPath, "embeddings"),
+    "ExportFilesToPath": os.path.join(UserLibraryPath, "exports"),
+    "NMAX": 20,
+}
+
+
+def startup():
+    print("""
+   _____           _       _____  _                _____ 
+  / ____|         | |     |  __ \(_)         /\   |_   _|
+ | |     _ __ __ _| |_ ___| |  | |_  __ _   /  \    | |  
+ | |    | '__/ _` | __/ _ \ |  | | |/ _` | / /\ \   | |  
+ | |____| | | (_| | ||  __/ |__| | | (_| |/ ____ \ _| |_ 
+  \_____|_|  \__,_|\__\___|_____/|_|\__, /_/    \_\_____|
+                                     __/ |               
+                                    |___/                
+          
+Welcome to CrateDig! This is a tool to search through your music library using text prompts or audio samples.
+To get started, please select a folder containing your music library and click 'Analyze and Save Collection'.
+This will create an embeddings index of your music library which will be used for searching.
+          
+Keep this terminal open to see debug information and error messages.
+""")
+    if not os.path.exists(UserLibraryPath):
+        os.makedirs(UserLibraryPath, exist_ok=True)
+    if not os.path.exists(os.path.join(UserLibraryPath, "state")):
+        os.makedirs(os.path.join(UserLibraryPath, "state"), exist_ok=True)
+    if not os.path.exists(os.path.join(UserLibraryPath, "playlists")):
+        os.makedirs(os.path.join(UserLibraryPath, "playlists"), exist_ok=True)
+    if not os.path.exists(os.path.join(UserLibraryPath, "embeddings")):
+        os.makedirs(os.path.join(UserLibraryPath, "embeddings"), exist_ok=True)
+    # export isnt used yet
+    if not os.path.exists(os.path.join(UserLibraryPath, "exports")):
+        os.makedirs(os.path.join(UserLibraryPath, "exports"), exist_ok=True)
 
 
 class CLIArgs:
@@ -72,7 +117,7 @@ class CLIArgs:
 def run_sample_finder_cli(args: CLIArgs):
 
     embeddings_index, path_map = load_embeddings_index(args.embedding_map_dir)
-    print(args)
+
     if args.as_playlist:
         return process_iterative_samples(
             args.input_value,
@@ -92,56 +137,15 @@ def run_sample_finder_cli(args: CLIArgs):
     )
 
 
-DEFAULTS = {
-    "AnalysedLibraries": [],
-    "LastUsedLibrary": "",
-    "UserLibraryPath": UserLibraryPath,
-    "PlaylistExportPath": os.path.join(UserLibraryPath, "playlists"),
-    "EmbeddingsExportPath": os.path.join(UserLibraryPath, "embeddings"),
-    "ExportFilesToPath": os.path.join(UserLibraryPath, "exports"),
-    "NMAX": 20,
-}
-
-
 class App(customtkinter.CTk):
-    def __init__(self, debug=True):
+    def __init__(self, debug=False):
         super().__init__()
         self.load_state()
+        
         self.debug = debug
-
-        def get_library_path():
-            print(self.LastUsedLibrary.get())
-            print(self.input_mode.get())
-            for libname, libpath in self.AnalysedLibraries.get():
-                if libname == self.LastUsedLibrary.get():
-                    return libpath
-            return ""
 
         self.progress_var = DoubleVar(value=0.0)
         self.library_visible = Variable(value=False)
-        # if last_state_sf.get("embedding_map_dir", "") == "":
-        #     audio_collection_dir = last_state_anl.get("audio_collection_dir", "")
-        #     library_name = last_state_anl.get("emap_name", "")
-        #     if audio_collection_dir != "" and library_name != "":
-        #         last_state_sf["embedding_map_dir"] = os.path.join(
-        #             last_state_anl["save_emap_location"], library_name
-        #         )
-        # self.input_type_var = StringVar()
-        # self.n_samples_var = StringVar(value="1")
-
-        # self.destination_folder_var = StringVar(
-        #     value=last_state_sf.get("destination_folder", "")
-        # )
-        # self.embedding_map_dir_var = StringVar(
-        #     value=last_state_sf.get("embedding_map_dir", "")
-        # )
-        # self.audio_collection_var = StringVar(
-        #     value=last_state_anl.get("audio_collection_dir", "")
-        # )
-        # self.save_emap_location_var = StringVar(
-        #     value=last_state_anl.get("save_emap_location", "")
-        # )
-        # self.library_name_var = StringVar(value=last_state_anl.get("emap_name", ""))
 
         # configure window
         self.title(UINAME)
@@ -159,14 +163,7 @@ class App(customtkinter.CTk):
         self.sidebar_frame.grid_rowconfigure(0, weight=1)
         self.sidebar_frame.grid_rowconfigure(gap_index, weight=8)
 
-        # Check if running as a PyInstaller bundle
-        if getattr(sys, "frozen", False):
-            application_path = sys._MEIPASS  # The path to the temporary folder where PyInstaller unpacks your bundle
-        else:
-            application_path = os.path.dirname(os.path.abspath(__file__))  # The directory of your script
-
-        # Define the full path to logo.png
-        logo_path = os.path.join(application_path, 'assets', 'logo.png')
+        logo_path = os.path.join(basepath, "assets", "logo.png")
 
         logo_image = Image.open(logo_path)
         self.logo = customtkinter.CTkImage(
@@ -206,13 +203,15 @@ class App(customtkinter.CTk):
         self.playlist_mode_label = customtkinter.CTkLabel(
             self.sidebar_frame, text="Sort by", anchor="w"
         )
-        self.playlist_mode_label.grid(row=4, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.playlist_mode_label.grid(
+            row=4, column=0, padx=20, pady=(10, 0), sticky="w"
+        )
         self.playlist_mode = Variable(value="Any close match")
         self.playlist_mode_switch = customtkinter.CTkSwitch(
             self.sidebar_frame,
             textvariable=self.playlist_mode,
             variable=self.playlist_mode,
-            onvalue= "Best next track",
+            onvalue="Best next track",
             offvalue="Any close match",
             switch_width=45,
             font=customtkinter.CTkFont(family="Mono", **buttonfontparams),
@@ -227,38 +226,46 @@ class App(customtkinter.CTk):
             anchor="w",
             # font=customtkinter.CTkFont(size=22, weight="bold"),
         )
-        self.lib_n_label.grid(row=gap_index+1, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.lib_n_label.grid(
+            row=gap_index + 1, column=0, padx=20, pady=(10, 0), sticky="w"
+        )
         self.lib_label = customtkinter.CTkLabel(
             self.sidebar_frame,
             textvariable=self.LastUsedLibrary,
             anchor="w",
             font=customtkinter.CTkFont(size=16, weight="bold"),
         )
-        self.lib_label.grid(row=gap_index+2, column=0, padx=20, pady=(0, 0), sticky="w")
+        self.lib_label.grid(
+            row=gap_index + 2, column=0, padx=20, pady=(0, 0), sticky="w"
+        )
         self.sidebar_button_1 = customtkinter.CTkButton(
             self.sidebar_frame,
             text="Show Library Info",
             command=self.toggle_library_visibility,
             font=customtkinter.CTkFont(**buttonfontparams),
-            width=210-40
+            width=210 - 40,
         )
-        self.sidebar_button_1.grid(row=gap_index+3, column=0, padx=20, pady=10, sticky="w")
+        self.sidebar_button_1.grid(
+            row=gap_index + 3, column=0, padx=20, pady=10, sticky="w"
+        )
 
         self.scaling_label = customtkinter.CTkLabel(
             self.sidebar_frame, text="UI Scaling:", anchor="w"
         )
-        self.scaling_label.grid(row=gap_index+4, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.scaling_label.grid(
+            row=gap_index + 4, column=0, padx=20, pady=(10, 0), sticky="w"
+        )
         self.scaling_optionemenu = customtkinter.CTkOptionMenu(
             self.sidebar_frame,
             values=["100%", "80%", "90%", "110%", "120%"],
             command=self.change_scaling_event,
-            width=210-40
+            width=210 - 40,
         )
-        self.scaling_optionemenu.grid(row=gap_index+5, column=0, padx=20, pady=(10, 20), sticky="w")
+        self.scaling_optionemenu.grid(
+            row=gap_index + 5, column=0, padx=20, pady=(10, 20), sticky="w"
+        )
 
-        
         # -------------------------------- Main Frame --------------------------------
-
 
         self.mainframe = customtkinter.CTkFrame(self)
         self.mainframe.grid(
@@ -548,7 +555,7 @@ class App(customtkinter.CTk):
 
             print(result)
             self.save_playlist(result, platform="m3u")
-            messagebox.showinfo("Success", "Operation Completed Successfully")
+            # messagebox.showinfo("Success", "Operation Completed Successfully")
             self.save_state()
         except ValueError:
             messagebox.showerror("Error", "Number of samples must be an integer.")
@@ -584,6 +591,14 @@ class App(customtkinter.CTk):
 
         try:
             wav_files = find_wav_files(new_library_path, AUDIO_FORMATS)
+
+            yn = messagebox.askyesno(
+                "Confirmation",
+                f"Found {len(wav_files)} audio files. Do you want to proceed?",
+            )
+            if not yn:
+                return
+
             embeddings_index, path_map = build_embeddings_index(
                 wav_files,
                 os.path.join(full_emap_path, "embeddings_list.npy"),
@@ -598,10 +613,10 @@ class App(customtkinter.CTk):
             )
             self.add_library_to_analyzed(new_library_name, new_library_path)
 
-            # messagebox.showinfo(
-            #     "Success",
-            #     f"Analysis completed. Embeddings saved to {full_emap_path}.",
-            # )
+            messagebox.showinfo(
+                "Success",
+                f"Analysis completed. Embeddings saved to {full_emap_path}.",
+            )
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
 
@@ -800,25 +815,17 @@ class App(customtkinter.CTk):
 
 
 if __name__ == "__main__":
-    if not os.path.exists(UserLibraryPath):
-        os.makedirs(UserLibraryPath, exist_ok=True)
-    if not os.path.exists(os.path.join(UserLibraryPath, "state")):
-        os.makedirs(os.path.join(UserLibraryPath, "state"), exist_ok=True)
-    if not os.path.exists(os.path.join(UserLibraryPath, "playlists")):
-        os.makedirs(os.path.join(UserLibraryPath, "playlists"), exist_ok=True)
-    if not os.path.exists(os.path.join(UserLibraryPath, "embeddings")):
-        os.makedirs(os.path.join(UserLibraryPath, "embeddings"), exist_ok=True)
-    if not os.path.exists(os.path.join(UserLibraryPath, "exports")):
-        os.makedirs(os.path.join(UserLibraryPath, "exports"), exist_ok=True)
-    if not os.path.exists(os.path.join(UserLibraryPath, "models")):
-        os.makedirs(os.path.join(UserLibraryPath, "models"), exist_ok=True)
-    # print(DEFAULTS)
 
+    # make UserLibrary directories
+    startup()
     app = App()
+    app.wm_iconbitmap(os.path.join(basepath, "assets", "logo.ico"))
+    # tell user to analyse a library if they haven't done so yet
     if os.path.exists(LAST_STATE) and len(app.AnalysedLibraries.get()) > 0:
         app.hide_library_info()
         app.library_visible.set(False)
     else:
         # app.show_library_info()
         app.library_visible.set(True)
+
     app.mainloop()

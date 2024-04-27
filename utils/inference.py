@@ -373,21 +373,32 @@ def process_iterative_samples(
 ################# LOADING MODELS AND CHECKPOINTS #################
 
 # Check if running as a PyInstaller bundle
-if getattr(sys, "frozen", False):
-    application_path = sys._MEIPASS
-else:
-    application_path = "."
+def get_application_dir():
+    """
+    This function returns the directory where the executable is running
+    or the script file in a development environment.
+    """
+    if getattr(sys, 'frozen', False):
+        # If the application is run as a bundled executable.
+        application_path = os.path.dirname(sys.executable)
+    else:
+        # If the application is run in a development environment.
+        application_path = os.path.dirname(os.path.abspath(__file__)).replace('utils', '')
 
-tokenizer_path = os.path.join(application_path, "gpt2_tokenizer")
+    return application_path
+
+basepath = get_application_dir()
+
+tokenizer_path = os.path.join(basepath, "assets", "models", "gpt2_tokenizer")
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
 text_encoder_model = torch.jit.load(
     os.path.join(
-        application_path, "UserLibrary", "models", "traced_text_encoder_model.pt"
+        basepath, "assets", "models", "traced_text_encoder_model.pt"
     )
 )
 audio_encoder_model = torch.jit.load(
     os.path.join(
-        application_path, "UserLibrary", "models", "traced_audio_encoder_model.pt"
+        basepath, "assets", "models", "traced_audio_encoder_model.pt"
     )
 )
