@@ -19,11 +19,20 @@ import os
 import argparse
 import customtkinter
 from PIL import Image
+import sys
 
+# Check if running as a PyInstaller bundle
+if getattr(sys, "frozen", False):
+    application_path = sys._MEIPASS  # The path to the temporary folder where PyInstaller unpacks your bundle
+else:
+    application_path = os.path.dirname(os.path.abspath(__file__))  # The directory of your script
+
+# Define the full path to ableton.json
+theme_file_path = os.path.join(application_path, "ableton.json")
+
+# Use the dynamically determined path for setting the theme
 customtkinter.set_appearance_mode("Dark")  # Modes: "System" (standard), "Dark", "Light"
-customtkinter.set_default_color_theme(
-    "ableton.json"
-)  # Themes: "blue" (standard), "green", "dark-blue"
+customtkinter.set_default_color_theme(theme_file_path)  # Adjusted to use the full path
 
 UINAME = "CrateDig"
 
@@ -150,7 +159,16 @@ class App(customtkinter.CTk):
         self.sidebar_frame.grid_rowconfigure(0, weight=1)
         self.sidebar_frame.grid_rowconfigure(gap_index, weight=8)
 
-        logo_image = Image.open("assets/logo.png")
+        # Check if running as a PyInstaller bundle
+        if getattr(sys, "frozen", False):
+            application_path = sys._MEIPASS  # The path to the temporary folder where PyInstaller unpacks your bundle
+        else:
+            application_path = os.path.dirname(os.path.abspath(__file__))  # The directory of your script
+
+        # Define the full path to logo.png
+        logo_path = os.path.join(application_path, 'assets', 'logo.png')
+
+        logo_image = Image.open(logo_path)
         self.logo = customtkinter.CTkImage(
             dark_image=logo_image, light_image=logo_image, size=(100, 100)
         )
