@@ -3,7 +3,7 @@
 block_cipher = None
 
 a = Analysis(
-    ["crateDigAI.py", "utils/playlist.py", "utils/inference.py"],
+    ["crateDigAI.py", "utils/playlist.py", "utils/inference.py", "asset_downloader.py"],
     pathex=["."],
     binaries=[],
     datas=[],
@@ -23,11 +23,11 @@ exe = EXE(
     pyz,
     a.scripts,
     # comment out these 3 lines to make it a directory based app instead
-    a.binaries,
-    a.zipfiles,
-    a.datas,
+    # a.binaries,
+    # a.zipfiles,
+    # a.datas,
     [],
-    # exclude_binaries=True,
+    exclude_binaries=True,
     name="CrateDigAI",
     debug=False,
     bootloader_ignore_signals=False,
@@ -36,4 +36,14 @@ exe = EXE(
     runtime_tmpdir=None,
     console=True,
     icon="assets/logo.ico",
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="CrateDigAI",
 )

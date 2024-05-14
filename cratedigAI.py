@@ -1,31 +1,7 @@
-import sys
+print("Importing modules...")
+import asset_downloader
 import os
-import json
-import argparse
-import customtkinter
-from PIL import Image
-from pprint import pprint
-from tkinter import DoubleVar, StringVar, IntVar, Variable, END
-from tkinter import filedialog, messagebox
-
-from utils import playlist
-from utils.inference import (
-    load_embeddings_index,
-    process_new_audio_sample,
-    process_iterative_samples,
-    find_wav_files,
-    build_embeddings_index,
-    save_embeddings_index,
-)
-
-UINAME = "CrateDig"
-AUDIO_FORMATS = (".wav", ".flac", ".mp3")
-REKORDBOX_EXT = ".xml"
-M3U_EXT = ".m3u"
-buttonfontparams = {"size": 14, "weight": "normal"}
-labelfontparams = {"size": 16, "weight": "bold"}
-XPAD = (10, 10)
-YPAD = (10, 20)
+import sys
 
 
 def get_application_dir():
@@ -44,6 +20,40 @@ def get_application_dir():
 
 
 basepath = get_application_dir()
+
+if not os.path.exists(os.path.join(basepath, "assets")):
+    print("Assets not found, downloading assets...")
+    asset_downloader.download_assets(basepath)
+
+
+import json
+import customtkinter
+from PIL import Image
+from pprint import pprint
+from tkinter import DoubleVar, StringVar, IntVar, Variable, END
+from tkinter import filedialog, messagebox
+
+from utils import playlist
+from utils.inference import (
+    load_embeddings_index,
+    process_new_audio_sample,
+    process_iterative_samples,
+    find_wav_files,
+    build_embeddings_index,
+    save_embeddings_index,
+)
+
+# -------------------------------- Constants --------------------------------
+UINAME = "CrateDig"
+AUDIO_FORMATS = (".wav", ".flac", ".mp3")
+REKORDBOX_EXT = ".xml"
+M3U_EXT = ".m3u"
+buttonfontparams = {"size": 14, "weight": "normal"}
+labelfontparams = {"size": 16, "weight": "bold"}
+XPAD = (10, 10)
+YPAD = (10, 20)
+
+
 UserLibraryPath = os.path.join(basepath, "UserLibrary")
 
 theme_file_path = os.path.join(basepath, "assets", "theme.json")
@@ -64,7 +74,8 @@ DEFAULTS = {
 
 
 def startup():
-    print("""
+    print(
+        f"""
    _____           _       _____  _                _____ 
   / ____|         | |     |  __ \(_)         /\   |_   _|
  | |     _ __ __ _| |_ ___| |  | |_  __ _   /  \    | |  
@@ -77,9 +88,11 @@ def startup():
 Welcome to CrateDig! This is a tool to search through your music library using text prompts or audio samples.
 To get started, please select a folder containing your music library and click 'Analyze and Save Collection'.
 This will create an embeddings index of your music library which will be used for searching.
-          
+
+Supported audio formats: .wav, .flac, .mp3          
 Keep this terminal open to see debug information and error messages.
-""")
+"""
+    )
     if not os.path.exists(UserLibraryPath):
         os.makedirs(UserLibraryPath, exist_ok=True)
     if not os.path.exists(os.path.join(UserLibraryPath, "state")):
@@ -141,7 +154,7 @@ class App(customtkinter.CTk):
     def __init__(self, debug=False):
         super().__init__()
         self.load_state()
-        
+
         self.debug = debug
 
         self.progress_var = DoubleVar(value=0.0)

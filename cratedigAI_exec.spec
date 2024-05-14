@@ -3,7 +3,7 @@
 block_cipher = None
 
 a = Analysis(
-    ["crateDigAI.py", "utils/playlist.py", "utils/inference.py"],
+    ["crateDigAI.py", "utils/playlist.py", "utils/inference.py", "asset_downloader.py"],
     pathex=["."],
     binaries=[],
     datas=[],
