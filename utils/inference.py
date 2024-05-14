@@ -2,7 +2,7 @@ import argparse
 import shutil
 import json
 from annoy import AnnoyIndex
-
+import copy
 # from msclap import CLAP
 import os
 import torch
@@ -31,7 +31,7 @@ def find_wav_files(root_dir, file_types):
     audio_files = []
     for subdir, dirs, files in os.walk(root_dir):
         for file in files:
-            if file.lower().endswith(tuple(file_types)):
+            if file.lower().endswith(tuple(file_types)) and not file.startswith("._"):
                 audio_files.append(os.path.join(subdir, file))
     return audio_files
 
@@ -49,24 +49,32 @@ def build_embeddings_index(wav_files, embeddings_list_path, progressbar, refresh
     done = 0
     progressbar.set(0)
     progressbar.start()
-
+    old_wav_files = copy.deepcopy(wav_files)
     for i, file_path in tqdm(
-        enumerate(wav_files),
+        enumerate(old_wav_files),
         desc="Building embeddings index",
-        total=len(wav_files),
+        total=len(old_wav_files),
         unit="files",
     ):
-        embedding = extract_embedding(file_path, False)
-        embedding_np = embedding.detach().cpu().numpy()
-        t.add_item(i, embedding_np)
-        embeddings_path_map[i] = file_path
-        embeddings_list[i] = embedding_np
-        done += 1
-        progressbar.set(done / len(wav_files))
-        refresh()
-        # embeddings_list.append(embedding)  # Add embedding to list
-        del embedding  # Explicitly delete if it's no longer needed
-        gc.collect()  # Force garbage collection
+        try:
+            embedding = extract_embedding(file_path, False)
+            embedding_np = embedding.detach().cpu().numpy()
+            t.add_item(i, embedding_np)
+            embeddings_path_map[i] = file_path
+            embeddings_list[i] = embedding_np
+            done += 1
+            progressbar.set(done / len(wav_files))
+            refresh()
+            # embeddings_list.append(embedding)  # Add embedding to list
+            del embedding  # Explicitly delete if it's no longer needed
+            gc.collect()  # Force garbage collection
+        except Exception as e:
+            wav_files.remove(file_path)
+            print(f"Error processing {file_path} new total {len(wav_files)}")
+            done += 1
+            progressbar.set(done / len(wav_files))
+            refresh()
+            continue
 
     progressbar.stop()
     t.build(10)  # 10 trees
@@ -184,7 +192,7 @@ def default_collate(batch: list[torch.Tensor]):
 
 
 def preprocess_audio(
-    audio_files, audio_duration=7, sampling_rate=44100, use_cuda=False, resample=True
+    audio_files, audio_duration=7, sampling_rate=22050, use_cuda=False, resample=True
 ):
     r"""Load list of audio files and return raw audio"""
     audio_tensors = []

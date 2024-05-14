@@ -332,7 +332,7 @@ class App(customtkinter.CTk):
         # number of samples
         self.n_samples_label = customtkinter.CTkLabel(
             self.mainframe,
-            text="Number of Samples:",
+            text="Number of Matches:",
             anchor="w",
             font=customtkinter.CTkFont(**labelfontparams),
         )
@@ -481,7 +481,7 @@ class App(customtkinter.CTk):
 
         self.libinfo_button = customtkinter.CTkButton(
             self.library_sidebar,
-            text="Analyze and Save Collection",
+            text="Analyze Library",
             command=self.analyze_audio_collection,
             width=290,
             font=customtkinter.CTkFont(**buttonfontparams),
@@ -535,7 +535,7 @@ class App(customtkinter.CTk):
                 return
             destination_folder = self.ExportFilesToPath.get()
             embedding_map_dir = self.get_last_used_embeddings_dir()
-            if not self.debug:
+            if self.debug:
                 pprint(self.get_current_state())
             args = CLIArgs(
                 input_value,
@@ -760,20 +760,20 @@ class App(customtkinter.CTk):
 
     def hide_library_info(self):
         # hide the library sidebar frame
+        self.library_visible.set(False)
         self.library_sidebar.grid_remove()
 
     def show_library_info(self):
         # show the library sidebar frame
+        self.library_visible.set(True)
         self.library_sidebar.grid()
 
     def toggle_library_visibility(self):
         visible = self.library_visible.get()
         if visible:
             self.hide_library_info()
-            self.library_visible.set(False)
         else:
             self.show_library_info()
-            self.library_visible.set(True)
 
     def switch_input_mode(self):
         if self.input_mode.get() == "text":
