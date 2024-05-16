@@ -33,12 +33,10 @@ def download_file(url, destination_name):
                 f.write(data)
                 progress_bar.update(len(data))
 
+        progress_bar.close()
     except Exception as e:
         tqdm.write(f"Error downloading/uploading {destination_name}: {str(e)}")
         raise e
-
-    finally:
-        progress_bar.close()
 
 def download_assets(destination):
     download_file(ASSETZIP, ASSETZIP_NAME)
