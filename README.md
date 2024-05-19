@@ -1,4 +1,14 @@
 # crate-dig
+
+## Motivation
+Traditionally, music producers sourced samples by visiting record stores, flea markets, and thrift shops to seek vinyl records that might contain sampling material. This meticulous process, known as crate digging, involves physically searching through crates of vinyl records to find musical sections that can be reused in new compositions.
+
+With the proliferation of digital music access, sample libraries, and online resources, digital crate digging has emerged as the contemporary alternative. Producers can now explore platforms like Splice and Tracklib to find suitable sampling material for their productions. However, the digitisation of music has introduced new challenges in navigating and managing these extensive collections of musical material.
+
+Over time, producers accumulate vast libraries of samples and music, often with inconsistent or non-existent labelling schemes. This can make it difficult to search for specific samples using traditional search methods. Finding the right sample can be a daunting task, often requiring hours of manually listening through tracks.
+
+Crate-Dig has been designed to streamline the digital crate digging experience, allowing producers to search their music and sample collections using natural language or audio input. By leveraging advanced AI search capabilities, Crate-Dig helps discover hidden gems that might have been forgotten or overlooked, saving countless hours and enhancing the creative workflow.
+
 ## Getting Started
 Download the latest release from the [releases page](https://github.com/jake-drysdale/crate-dig/releases), unzip the folder and run the executable.
 
