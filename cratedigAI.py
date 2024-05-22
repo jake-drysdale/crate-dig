@@ -48,6 +48,7 @@ from utils.inference import (
     build_embeddings_index,
     save_embeddings_index,
 )
+from showinfm import show_in_file_manager as open_path
 
 # -------------------------------- Constants --------------------------------
 UINAME = "CrateDig"
@@ -77,6 +78,7 @@ DEFAULTS = {
     "ExportFilesToPath": os.path.join(UserLibraryPath, "exports"),
     "NMAX": 20,
     "init_size": f"{1400}x{800}",
+    "analysis_sample_rate": "22050",
 }
 
 DEBUG = sys.argv[-1] == "--debug"
@@ -173,6 +175,13 @@ class Icons:
             ),
             size=(30, 30),
         )
+        self.openlocation = customtkinter.CTkImage(
+            dark_image=Image.open(os.path.join(basepath, "assets", "openlocation.png")),
+            light_image=Image.open(
+                os.path.join(basepath, "assets", "openlocation.png")
+            ),
+            size=(30, 30),
+        )
 
 
 icons = Icons()
@@ -253,8 +262,9 @@ class Track(customtkinter.CTkFrame):
                     else:
                         tags[key] = tagdict[key][0]
             except Exception as e:
-                print(f"Error getting tags:{self.track_path} {e}")
-                print(traceback.format_exc())
+                if DEBUG:
+                    print(f"Error getting tags:{self.track_path} {e}")
+                    print(traceback.format_exc())
                 tags = {
                     "title": os.path.basename(self.track_path),
                     "artist": "",
@@ -330,6 +340,15 @@ class Track(customtkinter.CTkFrame):
             self.channel.stop()
             self.audio = None
 
+    def get_info_text(self):
+        if (
+            self.track_tags.get("artist", "") != ""
+            and self.track_tags.get("album", "") != ""
+        ):
+            return f"{self.track_tags.get('artist', 'Unknown Artist')} • {self.track_tags.get('album', 'Unknown Album')}"
+        else:
+            return self.track_tags.get("album", "Unknown Album")
+
     def create_widgets(self):
         self.grid_rowconfigure(0, weight=0)
         # for i in range(1, 4):
@@ -358,13 +377,16 @@ class Track(customtkinter.CTkFrame):
             self,
             text=(
                 self.ellipsize(
-                    self.track_tags.get("artist", "Unknown Artist")
-                    + " • "
-                    + self.track_tags.get("album", "Unknown Album")
+                    self.get_info_text(),
+                    length=200,
                 )
             ),
             font=customtkinter.CTkFont(size=14),
             text_color="gray",
+            wraplength=600,
+            anchor="w",
+            compound="left",
+            justify="left",
         )
         self.track_artist_album.grid(row=0, column=2, padx=(0, 10), sticky="w")
 
@@ -389,6 +411,18 @@ class Track(customtkinter.CTkFrame):
             command=self.play,
         )
         self.play_button.grid(row=0, column=4, padx=(10, 0), sticky="e")
+
+        self.open_location_button = customtkinter.CTkButton(
+            self,
+            width=30,
+            height=30,
+            text="",
+            image=icons.openlocation,
+            fg_color="transparent",
+            hover=False,
+            command=lambda: open_path(self.track_path),
+        )
+        self.open_location_button.grid(row=0, column=5, padx=(0, 0), sticky="e")
 
 
 class Playlist(customtkinter.CTkFrame):
@@ -444,6 +478,9 @@ class Playlist(customtkinter.CTkFrame):
 
 
 class App(customtkinter.CTk):
+
+    # -------------------------------- GUI Components --------------------------------
+
     def __init__(self):
         super().__init__()
         self.load_state()
@@ -462,133 +499,11 @@ class App(customtkinter.CTk):
         self.grid_columnconfigure((2, 3), weight=0)
         self.grid_rowconfigure((0, 1, 2), weight=1)
 
-        # -------------------------------- Sidebar Frame --------------------------------
-        self.sidebar_frame = customtkinter.CTkFrame(self, width=140, corner_radius=0)
-        gap_index = 8
-        self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(0, weight=1)
-        self.sidebar_frame.grid_rowconfigure(gap_index, weight=8)
+        self.sidebar_frame_comp()
+        self.mainframe_comp()
+        self.library_sidebar_comp()
 
-        logo_path = os.path.join(basepath, "assets", "logo.png")
-
-        logo_image = Image.open(logo_path)
-        self.logo = customtkinter.CTkImage(
-            dark_image=logo_image, light_image=logo_image, size=(100, 100)
-        )
-        self.logo_image_label = customtkinter.CTkLabel(
-            self.sidebar_frame, image=self.logo, text=""
-        )
-        self.logo_image_label.grid(row=0, column=0, padx=20, pady=(20, 10))
-
-        self.logo_label = customtkinter.CTkLabel(
-            self.sidebar_frame,
-            text=UINAME,
-            font=customtkinter.CTkFont(size=20, weight="bold"),
-        )
-        self.logo_label.grid(row=1, column=0, padx=20, pady=(0, 10))
-
-        # UI switches
-
-        self.input_mode_label = customtkinter.CTkLabel(
-            self.sidebar_frame, text="Search by: text/audio", anchor="w"
-        )
-        self.input_mode_label.grid(row=2, column=0, padx=20, pady=(10, 0), sticky="w")
-        self.input_mode = Variable(value="text")
-        self.input_mode_switch = customtkinter.CTkSwitch(
-            self.sidebar_frame,
-            textvariable=self.input_mode,
-            variable=self.input_mode,
-            onvalue="text",
-            offvalue="audio",
-            switch_width=45,
-            command=self.switch_input_mode,
-            font=customtkinter.CTkFont(**buttonfontparams),
-        )
-        self.input_mode_switch.grid(row=3, column=0, padx=20, pady=0, sticky="w")
-
-        self.playlist_mode_label = customtkinter.CTkLabel(
-            self.sidebar_frame, text="Sort by", anchor="w"
-        )
-        self.playlist_mode_label.grid(
-            row=4, column=0, padx=20, pady=(10, 0), sticky="w"
-        )
-        self.playlist_mode = Variable(value="Any close match")
-        self.playlist_mode_switch = customtkinter.CTkSwitch(
-            self.sidebar_frame,
-            textvariable=self.playlist_mode,
-            variable=self.playlist_mode,
-            onvalue="Best next track",
-            offvalue="Any close match",
-            switch_width=45,
-            font=customtkinter.CTkFont(family="Mono", **buttonfontparams),
-        )
-        self.playlist_mode_switch.grid(row=5, column=0, padx=20, pady=0, sticky="w")
-
-        self.volume = IntVar(value=70)
-        self.volume_label = customtkinter.CTkLabel(
-            self.sidebar_frame, text="Volume", anchor="w"
-        )
-        self.volume_label.grid(row=6, column=0, padx=20, pady=(10, 0), sticky="w")
-        self.volume_slider = customtkinter.CTkSlider(
-            self.sidebar_frame,
-            from_=0,
-            to=100,
-            number_of_steps=100,
-            variable=self.volume,
-            height=22,
-            command=self.set_volume,
-            width=210 - 40 + 4,
-        )
-        self.volume_slider.grid(row=7, column=0, padx=20, pady=10, sticky="w")
-        # gap
-
-        self.lib_n_label = customtkinter.CTkLabel(
-            self.sidebar_frame,
-            text="Selected Library",
-            anchor="w",
-            # font=customtkinter.CTkFont(size=22, weight="bold"),
-        )
-        self.lib_n_label.grid(
-            row=gap_index + 1, column=0, padx=20, pady=(10, 0), sticky="w"
-        )
-        self.lib_label = customtkinter.CTkLabel(
-            self.sidebar_frame,
-            textvariable=self.LastUsedLibrary,
-            anchor="w",
-            font=customtkinter.CTkFont(size=16, weight="bold"),
-        )
-        self.lib_label.grid(
-            row=gap_index + 2, column=0, padx=20, pady=(0, 0), sticky="w"
-        )
-        self.sidebar_button_1 = customtkinter.CTkButton(
-            self.sidebar_frame,
-            text="Show Library Info",
-            command=self.toggle_library_visibility,
-            font=customtkinter.CTkFont(**buttonfontparams),
-            width=210 - 40,
-        )
-        self.sidebar_button_1.grid(
-            row=gap_index + 3, column=0, padx=20, pady=10, sticky="w"
-        )
-
-        self.scaling_label = customtkinter.CTkLabel(
-            self.sidebar_frame, text="UI Scaling:", anchor="w"
-        )
-        self.scaling_label.grid(
-            row=gap_index + 4, column=0, padx=20, pady=(10, 0), sticky="w"
-        )
-        self.scaling_optionemenu = customtkinter.CTkOptionMenu(
-            self.sidebar_frame,
-            values=["100%", "80%", "90%", "110%", "120%"],
-            command=self.change_scaling_event,
-            width=210 - 40,
-        )
-        self.scaling_optionemenu.grid(
-            row=gap_index + 5, column=0, padx=20, pady=(10, 20), sticky="w"
-        )
-
-        # -------------------------------- Main Frame --------------------------------
-
+    def mainframe_comp(self):
         self.mainframe = customtkinter.CTkFrame(self)
         self.mainframe.grid(
             row=0, column=1, rowspan=3, padx=XPAD, pady=(10, 10), sticky="nsew"
@@ -698,20 +613,6 @@ class App(customtkinter.CTk):
         )
         self.result_scrollable_frame.grid_columnconfigure(0, weight=1)
 
-        # self.playlist_textbox = customtkinter.CTkTextbox(
-        #     self.result_scrollable_frame,
-        #     wrap="none",
-        #     font=customtkinter.CTkFont(size=16),
-        # )
-        # self.playlist_textbox.grid(
-        #     row=0,
-        #     column=0,
-        #     # columnspan=2,
-        #     # padx=20,
-        #     pady=(0, 20),
-        #     sticky="ew",
-        # )
-
         self.result_tracks = []
         self.playlist = Playlist(
             self.result_scrollable_frame,
@@ -736,8 +637,133 @@ class App(customtkinter.CTk):
         )
         self.search_button.grid(row=3, column=1, padx=10, pady=(0, 20), sticky="nsew")
 
-        # -------------------------------- Library Sidebar --------------------------------
+    def sidebar_frame_comp(self):
+        self.sidebar_frame = customtkinter.CTkFrame(self, width=140, corner_radius=0)
+        gap_index = 8
+        self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
+        self.sidebar_frame.grid_rowconfigure(0, weight=1)
+        self.sidebar_frame.grid_rowconfigure(gap_index, weight=8)
 
+        logo_path = os.path.join(basepath, "assets", "logo.png")
+
+        logo_image = Image.open(logo_path)
+        self.logo = customtkinter.CTkImage(
+            dark_image=logo_image, light_image=logo_image, size=(100, 100)
+        )
+        self.logo_image_label = customtkinter.CTkLabel(
+            self.sidebar_frame, image=self.logo, text=""
+        )
+        self.logo_image_label.grid(row=0, column=0, padx=20, pady=(20, 10))
+
+        self.logo_label = customtkinter.CTkLabel(
+            self.sidebar_frame,
+            text=UINAME,
+            font=customtkinter.CTkFont(size=20, weight="bold"),
+        )
+        self.logo_label.grid(row=1, column=0, padx=20, pady=(0, 10))
+
+        # UI switches
+
+        self.input_mode_label = customtkinter.CTkLabel(
+            self.sidebar_frame, text="Search by: text/audio", anchor="w"
+        )
+        self.input_mode_label.grid(row=2, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.input_mode = Variable(value="text")
+        self.input_mode_switch = customtkinter.CTkSwitch(
+            self.sidebar_frame,
+            textvariable=self.input_mode,
+            variable=self.input_mode,
+            onvalue="text",
+            offvalue="audio",
+            switch_width=45,
+            command=self.switch_input_mode,
+            font=customtkinter.CTkFont(**buttonfontparams),
+        )
+        self.input_mode_switch.grid(row=3, column=0, padx=20, pady=0, sticky="w")
+
+        self.playlist_mode_label = customtkinter.CTkLabel(
+            self.sidebar_frame, text="Sort by", anchor="w"
+        )
+        self.playlist_mode_label.grid(
+            row=4, column=0, padx=20, pady=(10, 0), sticky="w"
+        )
+
+        self.playlist_mode = Variable(value="Any close match")
+        self.playlist_mode_switch = customtkinter.CTkSwitch(
+            self.sidebar_frame,
+            textvariable=self.playlist_mode,
+            variable=self.playlist_mode,
+            onvalue="Best next track",
+            offvalue="Any close match",
+            switch_width=45,
+            font=customtkinter.CTkFont(family="Mono", **buttonfontparams),
+        )
+        self.playlist_mode_switch.grid(row=5, column=0, padx=20, pady=0, sticky="w")
+
+        self.volume = IntVar(value=70)
+        self.volume_label = customtkinter.CTkLabel(
+            self.sidebar_frame, text="Volume", anchor="w"
+        )
+        self.volume_label.grid(row=6, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.volume_slider = customtkinter.CTkSlider(
+            self.sidebar_frame,
+            from_=0,
+            to=100,
+            number_of_steps=100,
+            variable=self.volume,
+            height=22,
+            command=self.set_volume,
+            width=210 - 40 + 4,
+        )
+        self.volume_slider.grid(row=7, column=0, padx=20, pady=10, sticky="w")
+        # gap
+
+        self.lib_n_label = customtkinter.CTkLabel(
+            self.sidebar_frame,
+            text="Selected Library",
+            anchor="w",
+            # font=customtkinter.CTkFont(size=22, weight="bold"),
+        )
+        self.lib_n_label.grid(
+            row=gap_index + 1, column=0, padx=20, pady=(10, 0), sticky="w"
+        )
+        self.lib_label = customtkinter.CTkLabel(
+            self.sidebar_frame,
+            textvariable=self.LastUsedLibrary,
+            anchor="w",
+            font=customtkinter.CTkFont(size=16, weight="bold"),
+        )
+        self.lib_label.grid(
+            row=gap_index + 2, column=0, padx=20, pady=(0, 0), sticky="w"
+        )
+        self.sidebar_button_1 = customtkinter.CTkButton(
+            self.sidebar_frame,
+            text="Show Library Info",
+            command=self.toggle_library_visibility,
+            font=customtkinter.CTkFont(**buttonfontparams),
+            width=210 - 40,
+        )
+        self.sidebar_button_1.grid(
+            row=gap_index + 3, column=0, padx=20, pady=10, sticky="w"
+        )
+
+        self.scaling_label = customtkinter.CTkLabel(
+            self.sidebar_frame, text="UI Scaling:", anchor="w"
+        )
+        self.scaling_label.grid(
+            row=gap_index + 4, column=0, padx=20, pady=(10, 0), sticky="w"
+        )
+        self.scaling_optionemenu = customtkinter.CTkOptionMenu(
+            self.sidebar_frame,
+            values=["100%", "80%", "90%", "110%", "120%"],
+            command=self.change_scaling_event,
+            width=210 - 40,
+        )
+        self.scaling_optionemenu.grid(
+            row=gap_index + 5, column=0, padx=20, pady=(10, 20), sticky="w"
+        )
+
+    def library_sidebar_comp(self):
         self.library_sidebar = customtkinter.CTkFrame(self, width=500)
         self.library_sidebar.grid(
             row=0,
@@ -822,6 +848,42 @@ class App(customtkinter.CTk):
         )
         self.browse_button.grid(row=7, column=1, padx=(10, 20), pady=(10, 10))
 
+        self.sample_rate_label = customtkinter.CTkLabel(
+            self.library_sidebar, text="Sample Rate", anchor="w"
+        )
+        self.sample_rate_label.grid(
+            row=8, column=0, columnspan=2, padx=20, pady=(10, 0), sticky="w"
+        )
+        self.sample_rate_label1 = customtkinter.CTkLabel(
+            self.library_sidebar,
+            text="Lower sample rate for faster analysis at the cost of accuracy.",
+            font=customtkinter.CTkFont(size=12),
+            anchor="w",
+            compound="left",
+            justify="left",
+            wraplength=290,
+        )
+        self.sample_rate_label1.grid(
+            row=9,
+            column=0,
+            columnspan=2,
+            padx=20,
+            pady=(5, 5),
+            sticky="w",
+        )
+
+        self.sample_rate_entry = customtkinter.CTkOptionMenu(
+            self.library_sidebar,
+            variable=self.analysis_sample_rate,
+            values=[str(sr) for sr in [16000, 22050, 44100, 48000]],
+            font=customtkinter.CTkFont(size=12),
+            width=290,
+            anchor="w",
+        )
+        self.sample_rate_entry.grid(
+            row=10, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="w"
+        )
+
         self.libinfo_button = customtkinter.CTkButton(
             self.library_sidebar,
             text="Analyze Library",
@@ -830,7 +892,7 @@ class App(customtkinter.CTk):
             font=customtkinter.CTkFont(**buttonfontparams),
         )
         self.libinfo_button.grid(
-            row=8,
+            row=11,
             column=0,
             padx=20,
             pady=(10, 20),
@@ -846,7 +908,7 @@ class App(customtkinter.CTk):
             corner_radius=5,
         )
         self.analysis_progressbar.grid(
-            row=9, column=0, padx=20, pady=(10, 20), columnspan=2, sticky="ew"
+            row=12, column=0, padx=20, pady=(10, 20), columnspan=2, sticky="ew"
         )
 
     # -------------------------------- Actions --------------------------------
@@ -937,7 +999,7 @@ class App(customtkinter.CTk):
 
             yn = messagebox.askyesno(
                 "Confirmation",
-                f"Found {len(wav_files)} audio files. Do you want to proceed?",
+                f"Found {len(wav_files)} audio files, analysing at {self.analysis_sample_rate.get()} Hz. Do you want to proceed?",
             )
             if not yn:
                 return
@@ -947,6 +1009,7 @@ class App(customtkinter.CTk):
                 os.path.join(full_emap_path, "embeddings_list.npy"),
                 self.analysis_progressbar,
                 self.library_sidebar.update_idletasks,
+                sr=int(self.analysis_sample_rate.get()),
             )
             save_embeddings_index(
                 embeddings_index,
@@ -975,7 +1038,7 @@ class App(customtkinter.CTk):
         # set the last used library to the new library
         self.LastUsedLibrary.set(library_name)
         self.save_state()
-        messagebox.showinfo("Success", "Library added successfully.")
+        # messagebox.showinfo("Success", "Library added successfully.")
 
     def load_state(self, state_path=LAST_STATE):
         if os.path.exists(state_path):
@@ -1000,6 +1063,9 @@ class App(customtkinter.CTk):
         )
         self.NMAX = IntVar(value=load_variable("NMAX"))
         self.init_size = load_variable("init_size")
+        self.analysis_sample_rate = Variable(
+            value=load_variable("analysis_sample_rate")
+        )
         self.ExportFilesToPath = Variable(value=load_variable("ExportFilesToPath"))
         self.NewLibraryPath = StringVar(value="")
 
@@ -1013,6 +1079,7 @@ class App(customtkinter.CTk):
             "ExportFilesToPath": self.ExportFilesToPath.get(),
             "NMAX": self.NMAX.get(),
             "init_size": self.init_size,
+            "analysis_sample_rate": self.analysis_sample_rate.get(),
         }
 
     def save_state(self, state_path=LAST_STATE):

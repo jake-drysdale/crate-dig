@@ -36,7 +36,7 @@ def find_wav_files(root_dir, file_types):
     return audio_files
 
 
-def build_embeddings_index(wav_files, embeddings_list_path, progressbar, refresh):
+def build_embeddings_index(wav_files, embeddings_list_path, progressbar, refresh, sr=22050):
     """Build an index of embeddings for the given files and return embeddings."""
     f = 1024  # embedding size is 1024
     t = AnnoyIndex(f, "angular")  # Using Annoy for nearest neighbor search
@@ -57,7 +57,7 @@ def build_embeddings_index(wav_files, embeddings_list_path, progressbar, refresh
         unit="files",
     ):
         try:
-            embedding = extract_embedding(file_path, False)
+            embedding = extract_embedding(file_path, False, sr)
             embedding_np = embedding.detach().cpu().numpy()
             t.add_item(i, embedding_np)
             embeddings_path_map[i] = file_path
@@ -262,13 +262,13 @@ def preprocess_text(text_queries, text_model="gpt2", text_len=77, use_cuda=False
 ################# EMBEDDING EXTRACTION AND LOADING #################
 
 
-def extract_embedding(audio_path, is_text) -> torch.Tensor:
+def extract_embedding(audio_path, is_text, sr=22050) -> torch.Tensor:
     if is_text:
         # embedding = clap_model.get_text_embeddings([audio_path])
         text_input = preprocess_text([audio_path])
         embedding = text_encoder_model(text_input)
     else:
-        audio_input = preprocess_audio([audio_path])
+        audio_input = preprocess_audio([audio_path], sampling_rate=sr)
         embedding = audio_encoder_model(audio_input)[0]
 
     return embedding[0]
