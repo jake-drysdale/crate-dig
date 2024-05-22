@@ -1,4 +1,4 @@
-print("Importing modules...")
+# print("Importing modules...")
 import traceback
 import asset_downloader
 import os
@@ -28,7 +28,14 @@ basepath = get_application_dir()
 
 if not os.path.exists(os.path.join(basepath, "assets")):
     print("Assets not found, downloading assets...")
-    asset_downloader.download_assets(basepath)
+    try:
+        asset_downloader.download_assets(basepath)
+    except Exception as e:
+        print(f"Error downloading assets: {str(e)}")
+        print(traceback.format_exc())
+        print("Please download the assets manually from the repository.")
+        input("Press Enter to exit...")
+        exit(1)
 
 from datetime import timedelta
 import json
