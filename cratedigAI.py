@@ -1,7 +1,12 @@
 print("Importing modules...")
+import traceback
 import asset_downloader
 import os
 import sys
+import io
+from os import environ
+
+environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
 
 def get_application_dir():
@@ -25,15 +30,16 @@ if not os.path.exists(os.path.join(basepath, "assets")):
     print("Assets not found, downloading assets...")
     asset_downloader.download_assets(basepath)
 
-
+from datetime import timedelta
 import json
 import customtkinter
 from PIL import Image
 from pprint import pprint
 from tkinter import DoubleVar, StringVar, IntVar, Variable, END
 from tkinter import filedialog, messagebox
-
-from utils import playlist
+import mutagen
+from pygame import mixer
+from utils import playlist as pl
 from utils.inference import (
     load_embeddings_index,
     process_new_audio_sample,
@@ -70,7 +76,10 @@ DEFAULTS = {
     "EmbeddingsExportPath": os.path.join(UserLibraryPath, "embeddings"),
     "ExportFilesToPath": os.path.join(UserLibraryPath, "exports"),
     "NMAX": 20,
+    "init_size": f"{1400}x{800}",
 }
+
+DEBUG = sys.argv[-1] == "--debug"
 
 
 def startup():
@@ -150,19 +159,284 @@ def run_sample_finder_cli(args: CLIArgs):
     )
 
 
+class Icons:
+    def __init__(self):
+        self.play = customtkinter.CTkImage(
+            dark_image=Image.open(os.path.join(basepath, "assets", "play-button.png")),
+            light_image=Image.open(os.path.join(basepath, "assets", "play-button.png")),
+            size=(30, 30),
+        )
+        self.pause = customtkinter.CTkImage(
+            dark_image=Image.open(os.path.join(basepath, "assets", "pause-button.png")),
+            light_image=Image.open(
+                os.path.join(basepath, "assets", "pause-button.png")
+            ),
+            size=(30, 30),
+        )
+
+
+icons = Icons()
+
+mixer.init()
+
+channel = mixer.find_channel()
+channel.set_volume(0.7)
+
+
+
+class Track(customtkinter.CTkFrame):
+    """
+    Frame that gets the album art of the track along with the id3 tags and displays them as a long card
+    """
+
+    def __init__(
+        self,
+        master,
+        track_path,
+        track_number,
+        stop_all,
+        stop_all_after=None,
+        cancel_current_running=None,
+        **kwargs,
+    ):
+        super().__init__(master, **kwargs)
+        self.track_path = track_path
+        self.track_number = track_number
+        self.track_tags = self.get_tags()
+        self.duration = mutagen.File(self.track_path).info.length
+        if self.duration:
+            if self.duration > 3600:
+                self.duration = str(timedelta(seconds=self.duration))
+            else:
+                self.duration = str(timedelta(seconds=self.duration)).split(".")[0][2:]
+        self.album_art = self.get_album_art()
+        self.playing = False
+        self.stop_all = stop_all
+        self.stop_all_after = stop_all_after
+        self.cancel_current_running = cancel_current_running
+        self.audio = None
+        self.channel = mixer.Channel(0)
+        self.create_widgets()
+
+    def get_tags(self):
+
+        tags = {"title": "Unknown Title", "artist": "Unknown Artist"}
+
+        audio = mutagen.File(self.track_path)
+        if audio is not None:
+            try:
+                tagdict = getattr(
+                    audio.tags,
+                    "as_dict",
+                    lambda: {
+                        "title": audio.get("TIT2").text,
+                        "artist": audio.get("TPE1").text,
+                        "album": audio.get("TALB").text,
+                    },
+                )()
+
+                for key in tagdict:
+                    if len(tagdict[key]) > 1:
+                        tags[key] = ", ".join(tagdict[key])
+                    else:
+                        tags[key] = tagdict[key][0]
+            except Exception as e:
+                print(f"Error getting tags:{self.track_path} {e}")
+                print(traceback.format_exc())
+                tags = {
+                    "title": os.path.basename(self.track_path),
+                    "artist": "",
+                    "album": os.path.dirname(self.track_path),
+                }
+
+        return tags
+
+    def ellipsize(self, text, length=50):
+        if len(text) > length:
+            return text[:length] + "..."
+        return text
+
+    def get_album_art(self):
+        audio = mutagen.File(self.track_path)
+        if audio is not None:
+
+            if getattr(audio, "pictures", None) is not None and len(audio.pictures) > 0:
+                return Image.open(io.BytesIO(audio.pictures[0].data))
+
+            else:
+                imgs = [
+                    img
+                    for img in os.listdir(os.path.dirname(self.track_path))
+                    if img.endswith((".jpg", ".png", ".jpeg"))
+                ]
+                if len(imgs) > 0:
+                    return Image.open(
+                        os.path.join(os.path.dirname(self.track_path), imgs[0])
+                    )
+                else:
+                    return Image.open(os.path.join(basepath, "assets", "logo.png"))
+
+        return None
+
+    def play(self):
+
+        if self.playing:
+            self.stop_all()
+            self.cancel_current_running()
+            self.play_button.configure(image=icons.play)
+            self.playing = False
+            if DEBUG:
+                print("trying to stop", self.track_path, self.playing)
+
+        else:
+            self.cancel_current_running()
+            self.stop_all()
+            self.audio = mixer.Sound(self.track_path)
+            self.channel.play(self.audio)
+            self.stop_all_after(self.audio.get_length(), self.track_number - 1)
+            self.play_button.configure(image=icons.pause)
+            self.playing = True
+            if DEBUG:
+                print("trying to play", self.track_path, self.playing)
+
+    def stop(self):
+        if self.audio:
+            self.channel.stop()
+            self.audio = None
+
+    def create_widgets(self):
+        self.grid_rowconfigure(0, weight=0)
+        # for i in range(1, 4):
+        #     self.grid_columnconfigure(i, weight=1)
+        self.grid_columnconfigure(4, weight=1)
+        self.album_art_image = customtkinter.CTkImage(
+            dark_image=self.album_art, light_image=self.album_art, size=(50, 50)
+        )
+        self.album_art_label = customtkinter.CTkLabel(
+            self,
+            image=self.album_art_image,
+            text="",
+            # fg_color="#ffdd00",
+        )
+        self.album_art_label.grid(row=0, column=0, padx=(0, 10), sticky="w")
+
+        self.track_title_label = customtkinter.CTkLabel(
+            self,
+            text=self.ellipsize(self.track_tags.get("title", "Unknown Title")),
+            font=customtkinter.CTkFont(size=16, weight="bold"),
+            # fg_color="#ffdd00",
+        )
+        self.track_title_label.grid(row=0, column=1, padx=(0, 10), sticky="w")
+
+        self.track_artist_label = customtkinter.CTkLabel(
+            self,
+            text=(
+                self.ellipsize(
+                    self.track_tags.get("artist", "Unknown Artist")
+                    + " • "
+                    + self.track_tags.get("album", "Unknown Album")
+                )
+            ),
+            font=customtkinter.CTkFont(size=14),
+            text_color="gray",
+            # fg_color="#ff0000",
+        )
+        self.track_artist_label.grid(row=0, column=2, padx=(0, 10), sticky="w")
+
+        # self.track_album_label = customtkinter.CTkLabel(
+        #     self, text=self.track_tags.get("album", "Unknown Album")
+        # )
+        # self.track_album_label.grid(row=2, column=1, sticky="w")
+
+        self.track_dur_label = customtkinter.CTkLabel(
+            self,
+            text=self.duration,
+            # fg_color="green",
+        )
+        self.track_dur_label.grid(row=0, column=3, padx=(0, 10), sticky="w")
+
+        self.play_button = customtkinter.CTkButton(
+            self,
+            width=30,
+            height=30,
+            text="",
+            image=icons.play,
+            fg_color="transparent",
+            # bg_color="transparent",
+            # text_color="white",
+            # hover_color="transparent",
+            hover=False,
+            font=customtkinter.CTkFont(size=16),
+            command=self.play,
+        )
+        self.play_button.grid(row=0, column=4, padx=(10, 0), sticky="e")
+
+
+class Playlist(customtkinter.CTkFrame):
+    """
+    Frame that displays a list of tracks as cards
+    """
+
+    def __init__(
+        self,
+        master,
+        tracks: list,
+        stop_all_after=None,
+        cancel_current_running=None,
+        **kwargs,
+    ):
+        super().__init__(master, **kwargs)
+        self.tracks = tracks
+        self.track_frames = []
+        self.stop_all_after = stop_all_after
+        self.cancel_current_running = cancel_current_running
+        self.current_playing = None
+        self.create_widgets()
+
+    def create_widgets(self):
+        self.grid_columnconfigure(0, weight=1)
+        for index, track in enumerate(self.tracks):
+            track_frame = Track(
+                self,
+                track,
+                index + 1,
+                stop_all=self.stop_all,
+                stop_all_after=self.stop_all_after,
+                cancel_current_running=self.cancel_current_running,
+            )
+            track_frame.grid(row=index, column=0, padx=0, pady=(0, 10), sticky="nsew")
+            self.track_frames.append(track_frame)
+
+    def stop_all(self):
+        mixer.stop()
+        # channel.stop()
+
+        for track in self.track_frames:
+            track.stop()
+            track.playing = False
+            track.play_button.configure(image=icons.play)
+
+    def redraw(self):
+        # self.tracks = self.tracks.get()
+        self.track_frames = []
+        for widget in self.winfo_children():
+            widget.destroy()
+        self.create_widgets()
+
+
 class App(customtkinter.CTk):
-    def __init__(self, debug=False):
+    def __init__(self):
         super().__init__()
         self.load_state()
-
-        self.debug = debug
+        self.running = None
+        self.debug = DEBUG
 
         self.progress_var = DoubleVar(value=0.0)
         self.library_visible = Variable(value=False)
 
         # configure window
         self.title(UINAME)
-        self.geometry(f"{1100}x{580}")
+        self.geometry(self.init_size)
 
         # configure grid layout (4x4)
         self.grid_columnconfigure(1, weight=1)
@@ -171,7 +445,7 @@ class App(customtkinter.CTk):
 
         # -------------------------------- Sidebar Frame --------------------------------
         self.sidebar_frame = customtkinter.CTkFrame(self, width=140, corner_radius=0)
-        gap_index = 7
+        gap_index = 8
         self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(0, weight=1)
         self.sidebar_frame.grid_rowconfigure(gap_index, weight=8)
@@ -231,6 +505,22 @@ class App(customtkinter.CTk):
         )
         self.playlist_mode_switch.grid(row=5, column=0, padx=20, pady=0, sticky="w")
 
+        self.volume = IntVar(value=70)
+        self.volume_label = customtkinter.CTkLabel(
+            self.sidebar_frame, text="Volume", anchor="w"
+        )
+        self.volume_label.grid(row=6, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.volume_slider = customtkinter.CTkSlider(
+            self.sidebar_frame,
+            from_=0,
+            to=100,
+            number_of_steps=100,
+            variable=self.volume,
+            height=22,
+            command=self.set_volume,
+            width=210 - 40 + 4,
+        )
+        self.volume_slider.grid(row=7, column=0, padx=20, pady=10, sticky="w")
         # gap
 
         self.lib_n_label = customtkinter.CTkLabel(
@@ -375,25 +665,46 @@ class App(customtkinter.CTk):
             row=self.rel + 3, column=1, padx=20, pady=(0, 20), sticky="nsew"
         )
 
-        self.result_label = customtkinter.CTkLabel(
+        self.result_scrollable_frame = customtkinter.CTkScrollableFrame(
             self.mainframe,
-            text="Results:",
-            anchor="w",
-            font=customtkinter.CTkFont(**labelfontparams),
+            label_text="Results:",
         )
-        self.result_label.grid(
-            row=self.rel + 4, column=0, padx=20, pady=(10, 10), sticky="w"
-        )
-        self.playlist_textbox = customtkinter.CTkTextbox(
-            self.mainframe,
-            wrap="none",
-            font=customtkinter.CTkFont(size=16),
-        )
-        self.playlist_textbox.grid(
-            row=self.rel + 5,
+        self.result_scrollable_frame.grid(
+            row=self.rel + 4,
             column=0,
             columnspan=2,
             padx=20,
+            pady=(10, 10),
+            sticky="nsew",
+        )
+        self.result_scrollable_frame.grid_columnconfigure(0, weight=1)
+
+        # self.playlist_textbox = customtkinter.CTkTextbox(
+        #     self.result_scrollable_frame,
+        #     wrap="none",
+        #     font=customtkinter.CTkFont(size=16),
+        # )
+        # self.playlist_textbox.grid(
+        #     row=0,
+        #     column=0,
+        #     # columnspan=2,
+        #     # padx=20,
+        #     pady=(0, 20),
+        #     sticky="ew",
+        # )
+
+        self.result_tracks = []
+        self.playlist = Playlist(
+            self.result_scrollable_frame,
+            self.result_tracks,
+            stop_all_after=self.stop_all_after,
+            cancel_current_running=self.cancel_current_running,
+        )
+
+        self.playlist.grid(
+            row=0,
+            column=0,
+            padx=0,
             pady=(0, 20),
             sticky="nsew",
         )
@@ -533,7 +844,6 @@ class App(customtkinter.CTk):
                 )
             else:
                 input_value = self.audio_prompt_entry.get().strip().replace("\n", "")
-            print(input_value)
             if not input_value or input_value.strip() == "":
                 messagebox.showerror(
                     "Error", "Please enter a text prompt or select an audio file."
@@ -563,10 +873,10 @@ class App(customtkinter.CTk):
             library_path = self.get_last_used_library_dir()
 
             if library_path or library_path != "":
-                displayresult = [os.path.relpath(path, library_path) for path in result]
-                self.textbox_set(self.playlist_textbox, displayresult)
+                self.set_result(self.playlist, result=result)
+            if self.debug:
+                print(result)
 
-            print(result)
             self.save_playlist(result, platform="m3u")
             # messagebox.showinfo("Success", "Operation Completed Successfully")
             self.save_state()
@@ -574,6 +884,7 @@ class App(customtkinter.CTk):
             messagebox.showerror("Error", "Number of samples must be an integer.")
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
+            raise e
 
     def analyze_audio_collection(
         self,
@@ -669,6 +980,7 @@ class App(customtkinter.CTk):
             value=load_variable("EmbeddingsExportPath")
         )
         self.NMAX = IntVar(value=load_variable("NMAX"))
+        self.init_size = load_variable("init_size")
         self.ExportFilesToPath = Variable(value=load_variable("ExportFilesToPath"))
         self.NewLibraryPath = StringVar(value="")
 
@@ -681,6 +993,7 @@ class App(customtkinter.CTk):
             "EmbeddingsExportPath": self.EmbeddingsExportPath.get(),
             "ExportFilesToPath": self.ExportFilesToPath.get(),
             "NMAX": self.NMAX.get(),
+            "init_size": self.init_size,
         }
 
     def save_state(self, state_path=LAST_STATE):
@@ -718,13 +1031,10 @@ class App(customtkinter.CTk):
             playlist_name += M3U_EXT
 
         playlist_path = os.path.join(self.PlaylistExportPath.get(), playlist_name)
-        res_playlist = playlist.Playlist(result, savepath=playlist_path)
+        res_playlist = pl.Playlist(result, savepath=playlist_path)
         res_playlist.write(
             platform,
-            pathfunc=lambda x: x.replace(
-                "/home/ali/beatoven/recordroom/", "E:\\Music\\calibre\\"
-            ).replace("/", "\\"),
-            uos="win",
+            pathfunc=lambda x: x,
         )
         messagebox.showinfo("Success", f"Playlist saved to {playlist_path}")
 
@@ -756,16 +1066,10 @@ class App(customtkinter.CTk):
             entry.delete(0, END)
             entry.insert(0, file_selected)
 
-    def textbox_set(self, textbox: customtkinter.CTkTextbox, text):
-        textbox.delete("1.0", END)
-
-        if type(text) == str:
-            textbox.insert("1.0", text)
-        elif type(text) == list:
-            textbox.insert(
-                "1.0",
-                "\n".join(f"{index+1}. {path}" for index, path in enumerate(text)),
-            )
+    def set_result(self, playlist_widget: Playlist, result):
+        playlist_widget.stop_all()
+        playlist_widget.tracks = result
+        playlist_widget.redraw()
 
     def update_entries_number(self, entries: list, new_value):
         for entry in entries:
@@ -808,12 +1112,6 @@ class App(customtkinter.CTk):
                 row=self.rel + 1, column=1, padx=(20, 20), pady=(0, 20), sticky="nsew"
             )
 
-    def open_input_dialog_event(self):
-        dialog = customtkinter.CTkInputDialog(
-            text="Type in a number:", title="CTkInputDialog"
-        )
-        print("CTkInputDialog:", dialog.get_input())
-
     def change_appearance_mode_event(self, new_appearance_mode: str):
         customtkinter.set_appearance_mode(new_appearance_mode)
 
@@ -826,11 +1124,41 @@ class App(customtkinter.CTk):
         else:
             self.hide_library_info()
 
+    def play_next(self, index=None):
+        print("playing next track", index)
+        if index is None:
+            return
+        if index < len(self.playlist.track_frames):
+            self.playlist.track_frames[index].play()
+
+    def stop_all_after(self, duration, index=None):
+        if DEBUG:
+            print("stopping all after", duration)
+
+        def stop_all(after):
+            if DEBUG:
+                print("stopping all", after)
+            self.playlist.stop_all()
+            self.play_next(index + 1)
+
+        self.running = self.after(round(duration) * 1000, lambda: stop_all(duration))
+
+    def cancel_current_running(self):
+
+        if self.running:
+            if DEBUG:
+                print("cancelling")
+            self.after_cancel(self.running)
+
+    def set_volume(self, volume):
+        channel.set_volume(int(volume) / 100)
+
 
 if __name__ == "__main__":
 
     # make UserLibrary directories
     startup()
+
     app = App()
     app.wm_iconbitmap(os.path.join(basepath, "assets", "logo.ico"))
     # tell user to analyse a library if they haven't done so yet
