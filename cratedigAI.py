@@ -183,6 +183,13 @@ channel = mixer.find_channel()
 channel.set_volume(0.7)
 
 
+def get_time_str(duration):
+    if duration > 3600:
+        duration = str(timedelta(seconds=duration))
+    else:
+        duration = str(timedelta(seconds=duration)).split(".")[0][2:]
+    return duration
+
 
 class Track(customtkinter.CTkFrame):
     """
@@ -200,17 +207,22 @@ class Track(customtkinter.CTkFrame):
         **kwargs,
     ):
         super().__init__(master, **kwargs)
+
         self.track_path = track_path
         self.track_number = track_number
         self.track_tags = self.get_tags()
         self.duration = mutagen.File(self.track_path).info.length
         if self.duration:
-            if self.duration > 3600:
-                self.duration = str(timedelta(seconds=self.duration))
-            else:
-                self.duration = str(timedelta(seconds=self.duration)).split(".")[0][2:]
+            self.duration = get_time_str(self.duration)
+        else:
+            self.duration = "Unknown Duration"
+
         self.album_art = self.get_album_art()
         self.playing = False
+
+        self.time_elapsed = 0
+        self.update_time = None
+
         self.stop_all = stop_all
         self.stop_all_after = stop_all_after
         self.cancel_current_running = cancel_current_running
@@ -250,6 +262,14 @@ class Track(customtkinter.CTkFrame):
                 }
 
         return tags
+
+    def update_time_elapsed(self):
+        self.time_elapsed += 1
+        self.track_dur_label.configure(
+            text=self.duration + " • " + get_time_str(self.time_elapsed)
+        )
+
+        self.update_time = self.after(1000, self.update_time_elapsed)
 
     def ellipsize(self, text, length=50):
         if len(text) > length:
@@ -293,6 +313,8 @@ class Track(customtkinter.CTkFrame):
             self.stop_all()
             self.audio = mixer.Sound(self.track_path)
             self.channel.play(self.audio)
+            self.time_elapsed = 0
+            self.update_time_elapsed()
             self.stop_all_after(self.audio.get_length(), self.track_number - 1)
             self.play_button.configure(image=icons.pause)
             self.playing = True
@@ -300,6 +322,10 @@ class Track(customtkinter.CTkFrame):
                 print("trying to play", self.track_path, self.playing)
 
     def stop(self):
+        if self.update_time:
+            self.track_dur_label.configure(text=self.duration)
+            self.after_cancel(self.update_time)
+            self.update_time = None
         if self.audio:
             self.channel.stop()
             self.audio = None
@@ -328,7 +354,7 @@ class Track(customtkinter.CTkFrame):
         )
         self.track_title_label.grid(row=0, column=1, padx=(0, 10), sticky="w")
 
-        self.track_artist_label = customtkinter.CTkLabel(
+        self.track_artist_album = customtkinter.CTkLabel(
             self,
             text=(
                 self.ellipsize(
@@ -339,19 +365,12 @@ class Track(customtkinter.CTkFrame):
             ),
             font=customtkinter.CTkFont(size=14),
             text_color="gray",
-            # fg_color="#ff0000",
         )
-        self.track_artist_label.grid(row=0, column=2, padx=(0, 10), sticky="w")
-
-        # self.track_album_label = customtkinter.CTkLabel(
-        #     self, text=self.track_tags.get("album", "Unknown Album")
-        # )
-        # self.track_album_label.grid(row=2, column=1, sticky="w")
+        self.track_artist_album.grid(row=0, column=2, padx=(0, 10), sticky="w")
 
         self.track_dur_label = customtkinter.CTkLabel(
             self,
             text=self.duration,
-            # fg_color="green",
         )
         self.track_dur_label.grid(row=0, column=3, padx=(0, 10), sticky="w")
 
@@ -1125,11 +1144,13 @@ class App(customtkinter.CTk):
             self.hide_library_info()
 
     def play_next(self, index=None):
-        print("playing next track", index)
         if index is None:
             return
         if index < len(self.playlist.track_frames):
+            print("playing next track #", index + 1)
             self.playlist.track_frames[index].play()
+        else:
+            print("no more tracks to play :(")
 
     def stop_all_after(self, duration, index=None):
         if DEBUG:
