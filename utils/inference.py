@@ -3,6 +3,7 @@ import shutil
 import json
 from annoy import AnnoyIndex
 import copy
+
 # from msclap import CLAP
 import os
 import torch
@@ -19,6 +20,7 @@ import numpy as np
 import torchaudio.transforms as T
 import gc
 from tqdm import tqdm
+import random
 
 # import subprocess
 
@@ -36,7 +38,9 @@ def find_wav_files(root_dir, file_types):
     return audio_files
 
 
-def build_embeddings_index(wav_files, embeddings_list_path, progressbar, refresh):
+def build_embeddings_index(
+    wav_files, embeddings_list_path, progressbar, refresh, sr=22050
+):
     """Build an index of embeddings for the given files and return embeddings."""
     f = 1024  # embedding size is 1024
     t = AnnoyIndex(f, "angular")  # Using Annoy for nearest neighbor search
@@ -57,7 +61,7 @@ def build_embeddings_index(wav_files, embeddings_list_path, progressbar, refresh
         unit="files",
     ):
         try:
-            embedding = extract_embedding(file_path, False)
+            embedding = extract_embedding(file_path, False, sr)
             embedding_np = embedding.detach().cpu().numpy()
             t.add_item(i, embedding_np)
             embeddings_path_map[i] = file_path
@@ -262,13 +266,13 @@ def preprocess_text(text_queries, text_model="gpt2", text_len=77, use_cuda=False
 ################# EMBEDDING EXTRACTION AND LOADING #################
 
 
-def extract_embedding(audio_path, is_text) -> torch.Tensor:
+def extract_embedding(audio_path, is_text, sr=22050) -> torch.Tensor:
     if is_text:
         # embedding = clap_model.get_text_embeddings([audio_path])
         text_input = preprocess_text([audio_path])
         embedding = text_encoder_model(text_input)
     else:
-        audio_input = preprocess_audio([audio_path])
+        audio_input = preprocess_audio([audio_path], sampling_rate=sr)
         embedding = audio_encoder_model(audio_input)[0]
 
     return embedding[0]
@@ -303,17 +307,22 @@ def process_new_audio_sample(
     destination_folder,
     is_text,
     mode="list",
-):
+) -> list[tuple[str, float]]:
     # def process_new_audio_sample(new_audio_path, embeddings_index, path_map, n_samples, destination_folder, text=False):
     """Process a new audio sample: Extract embedding, find closest samples, copy to destination."""
+    if is_text:
+        if "recommend" in input_value:
+            input_value = random.choice(list(path_map.values()))
+            is_text = False
+
     new_embedding = extract_embedding(input_value, is_text)
-    nearest_ids = embeddings_index.get_nns_by_vector(new_embedding, n_samples)
+    nearest_ids, nearest_distances = embeddings_index.get_nns_by_vector(
+        new_embedding, n_samples, include_distances=True
+    )
     result = []
     for nearest_id in nearest_ids:
         src_path = path_map[str(nearest_id)]
-        result.append(
-            process_path(mode, src_path=src_path, destination_folder=destination_folder)
-        )
+        result.append([src_path, nearest_distances[nearest_ids.index(nearest_id)]])
 
     return result
 
@@ -330,22 +339,34 @@ def process_iterative_samples(
     is_text,
     rename=False,
     mode="list",
-):
+) -> list[tuple[str, float]]:
     """
     Process an input to iteratively find the closest samples, creating a chain of related samples without repetition.
     Files are optionally renamed in sequential order starting from 0 based on the 'rename' parameter.
     """
     print("Processing iterative samples...")
+    if is_text:
+        if "recommend" in input_value:
+            input_value = random.choice(list(path_map.values()))
+            is_text = False
+
     current_embedding = extract_embedding(input_value, is_text)
     used_ids = set()
     file_counter = 0  # Initialize a counter to name files sequentially if renaming
-    result = []
-    for _ in range(n_samples):
-        nearest_ids = embeddings_index.get_nns_by_vector(
-            current_embedding, n_samples + len(used_ids)
+    result = [] if is_text else [[input_value, 0.0]]
+    for _ in tqdm(
+        range(n_samples),
+        desc="Processing samples",
+        unit="samples",
+        total=n_samples,
+        leave=False,
+        ):
+        nearest_ids, near_distances = embeddings_index.get_nns_by_vector(
+            current_embedding, n_samples + len(used_ids), include_distances=True
         )
         # Find the first unused sample
         next_sample_id = next((nid for nid in nearest_ids if nid not in used_ids), None)
+        next_sample_distance = near_distances[nearest_ids.index(next_sample_id)]
 
         if next_sample_id is None:
             print("No new unique samples available.")
@@ -358,19 +379,20 @@ def process_iterative_samples(
         src_path = path_map[str(next_sample_id)]
         current_embedding = extract_embedding(src_path, is_text)
 
-        # Construct the destination path based on the rename argument
-        if rename:
-            file_extension = os.path.splitext(src_path)[
-                1
-            ]  # Get the file extension from the source path
-            dest_path = os.path.join(
-                destination_folder, f"{file_counter}{file_extension}"
-            )
-        else:
-            dest_path = os.path.join(destination_folder, os.path.basename(src_path))
+        # # Construct the destination path based on the rename argument
+        # if rename:
+        #     file_extension = os.path.splitext(src_path)[
+        #         1
+        #     ]  # Get the file extension from the source path
+        #     dest_path = os.path.join(
+        #         destination_folder, f"{file_counter}{file_extension}"
+        #     )
+        # else:
+        #     dest_path = os.path.join(destination_folder, os.path.basename(src_path))
 
         # add to result
-        result.append(process_path(mode, src_path=src_path, dest_path=dest_path))
+        # result.append(process_path(mode, src_path=src_path, dest_path=dest_path))
+        result.append([src_path, next_sample_distance])
 
         # Increment the file counter for the next file name if renaming
         file_counter += 1
@@ -380,20 +402,24 @@ def process_iterative_samples(
 
 ################# LOADING MODELS AND CHECKPOINTS #################
 
+
 # Check if running as a PyInstaller bundle
 def get_application_dir():
     """
     This function returns the directory where the executable is running
     or the script file in a development environment.
     """
-    if getattr(sys, 'frozen', False):
+    if getattr(sys, "frozen", False):
         # If the application is run as a bundled executable.
         application_path = os.path.dirname(sys.executable)
     else:
         # If the application is run in a development environment.
-        application_path = os.path.dirname(os.path.abspath(__file__)).replace('utils', '')
+        application_path = os.path.dirname(os.path.abspath(__file__)).replace(
+            "utils", ""
+        )
 
     return application_path
+
 
 basepath = get_application_dir()
 
@@ -401,12 +427,8 @@ tokenizer_path = os.path.join(basepath, "assets", "models", "gpt2_tokenizer")
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
 text_encoder_model = torch.jit.load(
-    os.path.join(
-        basepath, "assets", "models", "traced_text_encoder_model.pt"
-    )
+    os.path.join(basepath, "assets", "models", "traced_text_encoder_model.pt")
 )
 audio_encoder_model = torch.jit.load(
-    os.path.join(
-        basepath, "assets", "models", "traced_audio_encoder_model.pt"
-    )
+    os.path.join(basepath, "assets", "models", "traced_audio_encoder_model.pt")
 )

@@ -7,14 +7,12 @@ import mutagen
 import json
 
 
-def list_to_m3u(file_list, dest, pathfunc=None, uos="win"):
+def list_to_m3u(file_list, dest, pathfunc=None):
     if pathfunc is None:
         pathfunc = lambda x: x
 
     with open(dest, "w", encoding="utf-8") as f:
         for file in file_list:
-            if uos == "win":
-                file.replace("/", "\\")
             f.write(pathfunc(file) + "\n")
 
 
@@ -47,7 +45,7 @@ class Playlist:
     def write_rekordbox(self):
         raise NotImplementedError
 
-    def write_m3u(self, pathfunc=None, uos="win"):
+    def write_m3u(self, pathfunc=None):
         print("Writing playlist")
-        list_to_m3u(self.mediafiles, self.savepath, pathfunc, uos)
+        list_to_m3u(self.mediafiles, self.savepath, pathfunc=pathfunc)
         return self.savepath
