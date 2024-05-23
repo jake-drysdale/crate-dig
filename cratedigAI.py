@@ -196,7 +196,7 @@ icons = Icons()
 mixer.init()
 
 channel = mixer.find_channel()
-channel.set_volume(0.7)
+# channel.set_volume(0.7)
 
 
 def get_time_str(duration):
@@ -215,7 +215,7 @@ class Track(customtkinter.CTkFrame):
     def __init__(
         self,
         master,
-        track_path,
+        track_path_and_distance,
         track_number,
         stop_all,
         stop_all_after=None,
@@ -224,7 +224,8 @@ class Track(customtkinter.CTkFrame):
     ):
         super().__init__(master, **kwargs)
 
-        self.track_path = track_path
+        self.track_path = track_path_and_distance[0]
+        self.similarity = (1-track_path_and_distance[1])*100
         self.track_number = track_number
         self.track_tags = self.get_tags()
         self.duration = mutagen.File(self.track_path).info.length
@@ -352,9 +353,9 @@ class Track(customtkinter.CTkFrame):
             self.track_tags.get("artist", "") != ""
             and self.track_tags.get("album", "") != ""
         ):
-            return f"{self.track_tags.get('artist', 'Unknown Artist')} • {self.track_tags.get('album', 'Unknown Album')}"
+            return f"{self.track_tags.get('artist', 'Unknown Artist')} • {self.track_tags.get('album', 'Unknown Album')} - {(self.similarity):.2f}%"
         else:
-            return self.track_tags.get("album", "Unknown Album")
+            return self.track_tags.get("album", "Unknown Album") + f" - {(self.similarity):.2f}%"
 
     def create_widgets(self):
         self.grid_rowconfigure(0, weight=0)
@@ -646,9 +647,10 @@ class App(customtkinter.CTk):
 
     def sidebar_frame_comp(self):
         self.sidebar_frame = customtkinter.CTkFrame(self, width=140, corner_radius=0)
-        gap_index = 8
         self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(0, weight=1)
+
+        gap_index = 10
         self.sidebar_frame.grid_rowconfigure(gap_index, weight=8)
 
         logo_path = os.path.join(basepath, "assets", "logo.png")
@@ -707,11 +709,31 @@ class App(customtkinter.CTk):
         )
         self.playlist_mode_switch.grid(row=5, column=0, padx=20, pady=0, sticky="w")
 
-        self.volume = IntVar(value=70)
+        self.auto_save_playlists_label = customtkinter.CTkLabel(
+            self.sidebar_frame, text="Auto Save Playlists", anchor="w"
+        )
+        self.auto_save_playlists_label.grid(
+            row=6, column=0, padx=20, pady=(10, 0), sticky="w"
+        )
+        self.auto_save_playlists = Variable(value="On")
+        self.auto_save_playlists_switch = customtkinter.CTkSwitch(
+            self.sidebar_frame,
+            textvariable=self.auto_save_playlists,
+            variable=self.auto_save_playlists,
+            onvalue="On",
+            offvalue="Off",
+            switch_width=45,
+            font=customtkinter.CTkFont(family="Mono", **buttonfontparams),
+        )
+        self.auto_save_playlists_switch.grid(
+            row=7, column=0, padx=20, pady=0, sticky="w"
+        )
+
+        self.volume = IntVar(value=100)
         self.volume_label = customtkinter.CTkLabel(
             self.sidebar_frame, text="Volume", anchor="w"
         )
-        self.volume_label.grid(row=6, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.volume_label.grid(row=8, column=0, padx=20, pady=(10, 0), sticky="w")
         self.volume_slider = customtkinter.CTkSlider(
             self.sidebar_frame,
             from_=0,
@@ -722,7 +744,8 @@ class App(customtkinter.CTk):
             command=self.set_volume,
             width=210 - 40 + 4,
         )
-        self.volume_slider.grid(row=7, column=0, padx=20, pady=10, sticky="w")
+        self.volume_slider.grid(row=9, column=0, padx=20, pady=10, sticky="w")
+
         # gap
 
         self.lib_n_label = customtkinter.CTkLabel(
@@ -957,15 +980,17 @@ class App(customtkinter.CTk):
                 as_playlist=(self.playlist_mode.get() == "Best next track"),
             )
             result = run_sample_finder_cli(args)
+            result.sort(key=lambda x: x[1])
             # file location realtive to library folder indicated in AnalysedLibraries
             library_path = self.get_last_used_library_dir()
 
             if library_path or library_path != "":
                 self.set_result(self.playlist, result=result)
             if self.debug:
-                print(result)
+                pprint(result)
 
-            self.save_playlist(result, platform="m3u")
+            if self.auto_save_playlists.get() == "On":
+                self.save_playlist([track for track, distance in result], platform="m3u")
             # messagebox.showinfo("Success", "Operation Completed Successfully")
             self.save_state()
         except ValueError:
