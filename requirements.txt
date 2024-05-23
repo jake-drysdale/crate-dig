@@ -3,3 +3,4 @@ torch==2.2.2
 customtkinter
 mutagen
 show-in-file-manager
+pygame
