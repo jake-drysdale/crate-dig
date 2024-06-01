@@ -88,6 +88,10 @@ DEFAULTS = {
     "analysis_sample_rate": "22050",
 }
 
+# https://www.desmos.com/calculator/sagqxwnarz
+y = lambda x : -62 - 1/(0.0001*(x - 162))
+VOLUMECURVE = [round(y(x)) for x in range(100)] + [100]
+
 DEBUG = sys.argv[-1] == "--debug"
 
 
@@ -103,7 +107,7 @@ def startup():
                                      __/ |               
                                     |___/                
           
-Welcome to CrateDig! This is a tool to search through your music library using text prompts or audio samples.
+Welcome to {UINAME}! This is a tool to search through your music library using text prompts or audio samples.
 To get started, please select a folder containing your music library and click 'Analyze and Save Collection'.
 This will create an embeddings index of your music library which will be used for searching.
 
@@ -1271,7 +1275,10 @@ class App(customtkinter.CTk):
             self.after_cancel(self.running)
 
     def set_volume(self, volume):
-        channel.set_volume(int(volume) / 100)
+        logvol = VOLUMECURVE[round(volume)]
+        if DEBUG:
+            print("setting volume to", int(logvol))
+        channel.set_volume(int(logvol) / 100)
 
 
 if __name__ == "__main__":
