@@ -1,4 +1,5 @@
 # crate-dig
+![ui](https://github.com/jake-drysdale/crate-dig/assets/89098679/8e97e96d-bdce-4c7a-ac94-5be15d6fa1e5)
 
 ## Motivation
 Traditionally, music producers sourced samples by visiting record stores, flea markets, and thrift shops to seek vinyl records that might contain sampling material. This meticulous process, known as crate digging, involves physically searching through crates of vinyl records to find musical sections that can be reused in new compositions.
