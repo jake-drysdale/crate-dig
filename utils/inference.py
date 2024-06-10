@@ -31,7 +31,7 @@ import random
 def find_wav_files(root_dir, file_types):
     """Recursively find all audio files of specified types in the directory."""
     audio_files = []
-    for subdir, dirs, files in os.walk(root_dir):
+    for subdir, dirs, files in os.walk(root_dir, followlinks=True):
         for file in files:
             if file.lower().endswith(tuple(file_types)) and not file.startswith("._"):
                 audio_files.append(os.path.join(subdir, file))

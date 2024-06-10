@@ -1082,6 +1082,22 @@ class App(customtkinter.CTk):
                 last_state = json.load(f)
         else:
             last_state = DEFAULTS
+        
+        resave = False
+        
+        # if basepath and the paths in the state file are not the same, update the statefile with the paths from defaults
+        if last_state.get("UserLibraryPath", "") != DEFAULTS["UserLibraryPath"]:
+            resave = True
+            last_state["UserLibraryPath"] = DEFAULTS["UserLibraryPath"]
+        if last_state.get("PlaylistExportPath", "") != DEFAULTS["PlaylistExportPath"]:
+            resave = True
+            last_state["PlaylistExportPath"] = DEFAULTS["PlaylistExportPath"]
+        if last_state.get("EmbeddingsExportPath", "") != DEFAULTS["EmbeddingsExportPath"]:
+            resave = True
+            last_state["EmbeddingsExportPath"] = DEFAULTS["EmbeddingsExportPath"]
+        if last_state.get("ExportFilesToPath", "") != DEFAULTS["ExportFilesToPath"]:
+            resave = True
+            last_state["ExportFilesToPath"] = DEFAULTS["ExportFilesToPath"]    
 
         def load_variable(key):
             return (
@@ -1104,6 +1120,9 @@ class App(customtkinter.CTk):
         )
         self.ExportFilesToPath = Variable(value=load_variable("ExportFilesToPath"))
         self.NewLibraryPath = StringVar(value="")
+
+        if resave:
+            self.save_state()
 
     def get_current_state(self):
         return {
