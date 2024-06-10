@@ -1122,6 +1122,7 @@ class App(customtkinter.CTk):
         self.NewLibraryPath = StringVar(value="")
 
         if resave:
+            print("Updating UserLibrary path to match the current folder after you relocated the app")
             self.save_state()
 
     def get_current_state(self):
