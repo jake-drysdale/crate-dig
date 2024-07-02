@@ -3,11 +3,14 @@ from multiprocessing import freeze_support
 freeze_support()
 
 import traceback
-import asset_downloader
+import asset_downloader_mac as asset_downloader
 import os
 import sys
 import io
 from os import environ
+import pathlib
+import time
+import threading
 
 environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
@@ -26,19 +29,87 @@ def get_application_dir():
 
     return application_path
 
+def initialize_app_support_dir():
+    app_support_dir = os.path.join(pathlib.Path.home(), 'Library', 'Application Support', 'CrateDigAI')
+    os.makedirs(app_support_dir, exist_ok=True)
+    return app_support_dir
 
-basepath = get_application_dir()
+def check_assets_ready(basepath):
+    # List of essential files to check for
+    essential_files = [
+        os.path.join(basepath, "assets", "logo.png"),
+        # Add other essential asset files here
+    ]
 
+    # Check if all essential files exist
+    for file_path in essential_files:
+        if not os.path.exists(file_path):
+            return False
+    return True
+
+def download_assets_with_gui(basepath):
+    import tkinter as tk
+    from tkinter import ttk, messagebox
+
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+
+    def show_progress():
+        progress_win = tk.Toplevel(root)
+        progress_win.title("CrateDig")
+        
+        style = ttk.Style()
+        style.configure("TProgressbar", thickness=20)
+
+        tk.Label(progress_win, text="Downloading assets, please wait...").pack(padx=20, pady=10)
+        
+        progress_bar = ttk.Progressbar(progress_win, orient="horizontal", length=300, mode="determinate", style="TProgressbar")
+        progress_bar.pack(padx=20, pady=20)
+
+        def update_progress(percent):
+            progress_bar['value'] = percent
+            root.update_idletasks()
+        
+        def download():
+            try:
+                asset_downloader.download_assets(basepath, update_progress)
+                messagebox.showinfo("Success", "Assets downloaded successfully.")
+            except Exception as e:
+                error_message = f"Error downloading assets: {str(e)}\n{traceback.format_exc()}\nPlease download the assets manually from the repository."
+                messagebox.showerror("Error", error_message)
+                print(error_message)
+            finally:
+                progress_win.destroy()
+                root.quit()
+
+        threading.Thread(target=download).start()
+
+    root.after(0, show_progress)
+    root.mainloop()
+
+# Initialize application support directory
+basepath = initialize_app_support_dir()
+
+# Check for assets and download if not present
 if not os.path.exists(os.path.join(basepath, "assets")):
     print("Assets not found, downloading assets...")
-    try:
-        asset_downloader.download_assets(basepath)
-    except Exception as e:
-        print(f"Error downloading assets: {str(e)}")
-        print(traceback.format_exc())
-        print("Please download the assets manually from the repository.")
-        input("Press Enter to exit...")
-        exit(1)
+    download_assets_with_gui(basepath)
+
+# Wait for assets to be ready
+while not check_assets_ready(basepath):
+    print("Waiting for assets to be ready...")
+    time.sleep(1)
+
+# if not os.path.exists(os.path.join(basepath, "assets")):
+#     print("Assets not found, downloading assets...")
+#     try:
+#         asset_downloader.download_assets(basepath)
+#     except Exception as e:
+#         print(f"Error downloading assets: {str(e)}")
+#         print(traceback.format_exc())
+#         print("Please download the assets manually from the repository.")
+#         input("Press Enter to exit...")
+#         exit(1)
 
 from datetime import timedelta
 import json
@@ -50,7 +121,7 @@ from tkinter import filedialog, messagebox
 import mutagen
 from pygame import mixer
 from utils import playlist as pl
-from utils.inference import (
+from utils.inference_mac import (
     load_embeddings_index,
     process_new_audio_sample,
     process_iterative_samples,
@@ -1006,9 +1077,7 @@ class App(customtkinter.CTk):
             messagebox.showerror("Error", f"An error occurred: {e}")
             raise e
 
-    def analyze_audio_collection(
-        self,
-    ):
+    def analyze_audio_collection(self):
         """
         Analyze the audio collection and save the embeddings index.
         """
@@ -1033,37 +1102,43 @@ class App(customtkinter.CTk):
 
         os.makedirs(full_emap_path, exist_ok=True)
 
-        try:
-            wav_files = find_wav_files(new_library_path, AUDIO_FORMATS)
+        wav_files = find_wav_files(new_library_path, AUDIO_FORMATS)
+        yn = messagebox.askyesno(
+            "Confirmation",
+            f"Found {len(wav_files)} audio files, analysing at {self.analysis_sample_rate.get()} Hz. Do you want to proceed?",
+        )
+        if not yn:
+            return
 
-            yn = messagebox.askyesno(
-                "Confirmation",
-                f"Found {len(wav_files)} audio files, analysing at {self.analysis_sample_rate.get()} Hz. Do you want to proceed?",
-            )
-            if not yn:
-                return
+        # Close the dialog and start analysis in a separate thread
+        def start_analysis():
+            try:
+                embeddings_index, path_map = build_embeddings_index(
+                    wav_files,
+                    os.path.join(full_emap_path, "embeddings_list.npy"),
+                    self.analysis_progressbar,
+                    self.library_sidebar.update_idletasks,
+                    sr=int(self.analysis_sample_rate.get()),
+                )
+                save_embeddings_index(
+                    embeddings_index,
+                    path_map,
+                    os.path.join(full_emap_path, "embeddings.ann"),
+                    os.path.join(full_emap_path, "path_map.json"),
+                )
+                self.add_library_to_analyzed(new_library_name, new_library_path)
 
-            embeddings_index, path_map = build_embeddings_index(
-                wav_files,
-                os.path.join(full_emap_path, "embeddings_list.npy"),
-                self.analysis_progressbar,
-                self.library_sidebar.update_idletasks,
-                sr=int(self.analysis_sample_rate.get()),
-            )
-            save_embeddings_index(
-                embeddings_index,
-                path_map,
-                os.path.join(full_emap_path, "embeddings.ann"),
-                os.path.join(full_emap_path, "path_map.json"),
-            )
-            self.add_library_to_analyzed(new_library_name, new_library_path)
+                # Use the main thread to show success message
+                self.after(0, lambda: messagebox.showinfo(
+                    "Success",
+                    f"Analysis completed. Embeddings saved to {full_emap_path}.",
+                ))
+            except Exception as e:
+                # Use the main thread to show error message
+                self.after(0, lambda: messagebox.showerror("Error", f"An error occurred: {e}"))
 
-            messagebox.showinfo(
-                "Success",
-                f"Analysis completed. Embeddings saved to {full_emap_path}.",
-            )
-        except Exception as e:
-            messagebox.showerror("Error", f"An error occurred: {e}")
+        analysis_thread = threading.Thread(target=start_analysis)
+        analysis_thread.start()
 
     # -------------------------------- State management --------------------------------
 
