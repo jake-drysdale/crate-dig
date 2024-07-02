@@ -5,7 +5,7 @@ from tqdm import tqdm
 import zipfile
 
 ASSETZIP = "https://github.com/jake-drysdale/crate-dig/releases/download/assets/assets.zip"
-ASSETZIP_NAME = "assets.zip"
+ASSETZIP_NAME = os.path.expanduser("~/Library/Application Support/CrateDigAI/assets.zip")
 DESTINATION = "assets"
 
 def download_file(url, destination_name, progress_callback=None):

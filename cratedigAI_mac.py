@@ -50,7 +50,7 @@ def check_assets_ready(basepath):
 def download_assets_with_gui(basepath):
     import tkinter as tk
     from tkinter import ttk, messagebox
-
+    
     root = tk.Tk()
     root.withdraw()  # Hide the root window
 
@@ -73,10 +73,14 @@ def download_assets_with_gui(basepath):
         def download():
             try:
                 asset_downloader.download_assets(basepath, update_progress)
-                messagebox.showinfo("Success", "Assets downloaded successfully.")
+                # Inform the user about the successful download and ask to reopen the app
+                root.after(0, lambda: messagebox.showinfo(
+                    "Success",
+                    "Assets downloaded successfully. Please reopen the app."
+                ))
             except Exception as e:
                 error_message = f"Error downloading assets: {str(e)}\n{traceback.format_exc()}\nPlease download the assets manually from the repository."
-                messagebox.showerror("Error", error_message)
+                root.after(0, lambda: messagebox.showerror("Error", error_message))
                 print(error_message)
             finally:
                 progress_win.destroy()
